@@ -1,0 +1,2 @@
+data_formulator==0.8.0b1
+gunicorn==23.0.0
