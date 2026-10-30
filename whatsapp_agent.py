@@ -9,7 +9,10 @@ import re
 import unicodedata
 import logging
 import time
+import threading
 from pathlib import Path
+
+_GOOGLE_RESTORE_LOCK = threading.Lock()
 
 RULES = '''Responda em português do Brasil, somente com fatos obtidos das tabelas disponíveis.
 O canal é WhatsApp. Entregue texto legível e listas; não exponha Python, SQL, caminhos ou logs.
@@ -425,6 +428,13 @@ def publish(root, workspace_path, selected_tables, model_id, rules):
 
 def restore_from_google(root):
     """Reconstrói os dados publicados após perda do disco temporário no Render Free."""
+    # A restauração automática de inicialização e o primeiro trabalho do WhatsApp
+    # podem coincidir. Serializa as chamadas sem alterar quais abas são lidas.
+    with _GOOGLE_RESTORE_LOCK:
+        return _restore_from_google_locked(root)
+
+
+def _restore_from_google_locked(root):
     from google_sheets_data_loader import GoogleSheetsDataLoader
     from data_formulator.datalake.workspace import Workspace
     from data_formulator.model_registry import model_registry

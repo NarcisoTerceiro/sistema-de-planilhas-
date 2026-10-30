@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements-render.txt
-    startCommand: gunicorn --workers 1 --threads 4 --timeout 300 --bind 0.0.0.0:$PORT servidor_online:app
+    startCommand: gunicorn --workers 1 --threads 2 --timeout 300 --bind 0.0.0.0:$PORT servidor_online:app
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION

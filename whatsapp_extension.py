@@ -486,13 +486,18 @@ def install(app):
     test_lock = threading.Lock()
     worker = Worker(app, root, store)
     worker._lock_path = home / '.whatsapp-worker.lock'
-    if env_true('WHATSAPP_RESTORE_FROM_GOOGLE'):
-        try:
-            restore_from_google(root)
-            log.info('Dados do WhatsApp disponíveis a partir do Google Sheets.')
-        except Exception as exc:
-            log_failure('Restauração do Google pendente', exc)
     app.extensions['whatsapp_bridge'] = worker
+    if env_true('WHATSAPP_RESTORE_FROM_GOOGLE'):
+        def restore_on_startup():
+            try:
+                restore_from_google(root)
+                log.info('Dados do WhatsApp disponíveis a partir do Google Sheets.')
+            except Exception as exc:
+                log_failure('Restauração do Google pendente', exc)
+
+        # Não bloqueia o início do Gunicorn enquanto baixa e publica as abas.
+        # A rotina continua lendo as mesmas abas e usando os mesmos dados.
+        threading.Thread(target=restore_on_startup, name='whatsapp-google-restore', daemon=True).start()
     if enabled and os.environ.get('WHATSAPP_START_WORKER', 'true').lower() == 'true':
         worker.start()
     return worker
