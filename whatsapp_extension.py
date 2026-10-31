@@ -356,7 +356,6 @@ def install(app):
     def wa_panel():
         if request.values.get('source') == 'google':
             return wa_google()
-        from data_formulator.datalake.workspace import Workspace
         from data_formulator.model_registry import model_registry
         workspaces = available_workspaces()
         selected = request.values.get('workspace', '')
@@ -369,8 +368,17 @@ def install(app):
         csrf = session.setdefault('wa_csrf', secrets.token_urlsafe(32))
         tables = []
         if selected in workspaces:
-            workspace = Workspace(identity_id='whatsapp:editor', workspace_path=workspaces[selected])
-            tables = [{'name': name, 'rows': workspace.get_table_metadata(name).row_count} for name in workspace.list_tables()]
+            try:
+                # O painel inicial e o teste da planilha publicada não precisam
+                # importar o Workspace do editor de sessões locais.
+                from data_formulator.datalake.workspace import Workspace
+                workspace = Workspace(identity_id='whatsapp:editor', workspace_path=workspaces[selected])
+                tables = [{'name': name, 'rows': workspace.get_table_metadata(name).row_count} for name in workspace.list_tables()]
+            except Exception as exc:
+                log_failure('Leitura da sessão no painel', exc)
+                message = 'Não foi possível abrir essa sessão. Consulte os logs. A planilha já publicada continua configurada.'
+                if request.method == 'POST':
+                    return Response('Não foi possível abrir a sessão selecionada. Reabra o painel e consulte os logs.', 503)
         if request.method == 'POST':
             if not same(request.form.get('csrf', ''), csrf):
                 return Response('Reabra a página e tente novamente.', 403)
