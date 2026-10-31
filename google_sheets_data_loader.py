@@ -10,8 +10,6 @@ import time
 from pathlib import Path
 from urllib.parse import quote
 
-import pandas as pd
-import pyarrow as pa
 from google.oauth2.service_account import Credentials
 from google.auth.transport.requests import AuthorizedSession
 from data_formulator.data_loader.external_data_loader import (
@@ -47,6 +45,7 @@ def number(value, decimal_dot=False):
 
 def prepare_rows(rows, title):
     """Padroniza cabeçalho e tipos, sem inventar zero para dado ausente."""
+    import pandas as pd
     if not rows:
         return pd.DataFrame(), MEANINGS.get(title.upper(), '')
     width = max(map(len, rows))
@@ -271,6 +270,7 @@ class GoogleSheetsDataLoader(ExternalDataLoader):
         return self.get_metadata(source_table)
 
     def fetch_data_as_arrow(self, source_table, import_options=None):
+        import pyarrow as pa
         opts = import_options or {}
         if opts.get('filters') or opts.get('source_filters') or opts.get('sort_columns'):
             raise ValueError('Importe a aba completa e peça ao agente para filtrar e ordenar depois.')

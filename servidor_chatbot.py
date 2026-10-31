@@ -15,7 +15,9 @@ if version('data_formulator') != '0.8.0b1':
 
 # Mantém os caminhos de configuração usados pelo leitor do Google e pelo núcleo
 # de análise do Data Formulator, sem importar data_formulator.app e suas rotas/UI.
-os.environ['DF_PLUGIN_DIR'] = str(ROOT)
+# O chatbot importa o conector diretamente. Evita executá-lo novamente
+# durante a descoberta automática de plugins do Data Formulator.
+os.environ['DF_PLUGIN_DIR'] = str(ROOT / '_chatbot_plugins')
 os.environ['DATA_FORMULATOR_ENV_DIR'] = str(ROOT)
 if os.environ.get('RENDER'):
     os.environ.setdefault('HOST', '0.0.0.0')
