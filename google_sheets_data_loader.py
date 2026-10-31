@@ -43,6 +43,14 @@ def number(value, decimal_dot=False):
     return result / 100 if percent else result
 
 
+def is_coordinate(label):
+    """Coluna de latitude/longitude. Palavras completas por substring (cobre
+    'LATITUDE (GRAUS)', 'LONGITUDE DA OBRA') e formas curtas por igualdade
+    exata (evita casar 'PLATAFORMA', que contém 'LAT')."""
+    return ('LATITUDE' in label or 'LONGITUDE' in label
+            or label in ('LAT', 'LONG', 'LON', 'LNG'))
+
+
 def prepare_rows(rows, title):
     """Padroniza cabeçalho e tipos, sem inventar zero para dado ausente."""
     import pandas as pd
@@ -88,7 +96,8 @@ def prepare_rows(rows, title):
         if values.empty:
             continue
         label = col.upper()
-        numeric = any(word in label for word in ('VALOR', 'ADITIVO', 'REAJUSTE', 'CONTRAPARTIDA', 'PAGO', 'SALDO', 'COMPRIMENTO', 'MEIO FIO', 'ÁREA PAVIMENTADA', 'LATITUDE', 'LONGITUDE', '%'))
+        numeric = (is_coordinate(label)
+                   or any(word in label for word in ('VALOR', 'ADITIVO', 'REAJUSTE', 'CONTRAPARTIDA', 'PAGO', 'SALDO', 'COMPRIMENTO', 'MEIO FIO', 'ÁREA PAVIMENTADA', '%')))
         # Datas formatadas pela API ficam como texto até esta conversão explícita.
         if 'DATA' in label:
             parsed = pd.to_datetime(df[col], dayfirst=True, errors='coerce', format='mixed')
@@ -97,7 +106,7 @@ def prepare_rows(rows, title):
                 continue
         if numeric:
             try:
-                converted = [None if pd.isna(v) else number(v, label in ('LATITUDE', 'LONGITUDE')) for v in df[col]]
+                converted = [None if pd.isna(v) else number(v, is_coordinate(label)) for v in df[col]]
                 df[col] = pd.Series(converted, dtype='float64')
                 continue
             except (ValueError, TypeError):

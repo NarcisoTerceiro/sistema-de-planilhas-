@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.pyc
+google-service-account.json
+*service-account*.json
+*.json.key
+.data_formulator/
+data_formulator_home/
+_chatbot_plugins/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm

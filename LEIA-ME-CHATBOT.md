@@ -20,9 +20,9 @@ O pacote Python `data_formulator==0.8.0b1` continua instalado porque o leitor e 
 
 Este pacote é para testar no Render como um **segundo serviço**, sem substituir o Data Formulator que já está publicado.
 
-1. Coloque a pasta `chatbot-render-enxuto` dentro do repositório GitHub ligado ao Render e envie essa alteração para o GitHub. Não envie `.env`, o JSON da conta de serviço nem chaves.
+1. Envie estes arquivos para o repositório GitHub ligado ao Render. Eles já estão na raiz deste pacote (`data-formulator-render-pronto`). Não envie `.env`, o JSON da conta de serviço nem chaves — o `.gitignore` incluído já bloqueia esses arquivos.
 2. No Render, clique em **New + → Web Service** e escolha o mesmo repositório e a branch atual.
-3. Em **Root Directory**, informe `chatbot-render-enxuto`.
+3. Em **Root Directory**, informe a pasta onde estes arquivos ficam no seu repositório. Se eles estiverem na raiz do repositório, deixe este campo em branco; se estiverem dentro de uma subpasta, informe o caminho dela.
 4. Use estas configurações:
    - **Runtime:** Python 3
    - **Build Command:** `pip install -r requirements-render.txt`

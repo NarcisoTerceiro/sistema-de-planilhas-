@@ -174,6 +174,7 @@ body{font:16px system-ui;max-width:960px;margin:35px auto;padding:0 20px;color:#
 <section><h2>Origem da planilha</h2><form method="get"><label>De onde deseja importar?<select name="source" onchange="this.form.submit()"><option value="sessions" selected>Sessões do sistema</option><option value="google">Conta de serviço Google</option></select></label><noscript><button>Selecionar origem</button></noscript></form></section>
 {% if message %}<section class="error">{{message}}</section>{% endif %}
 <section><h2>1. Escolha a sessão com a planilha pronta</h2>
+{% if not workspaces %}<p class="error">Nenhuma sessão local encontrada. Este servidor usa a <a href="/integracoes/whatsapp?source=google">conta de serviço Google</a> como origem dos dados.</p>{% endif %}
 <form method="get"><select name="workspace" required><option value="">Selecione</option>{% for w in workspaces %}<option value="{{w.id}}" {% if w.id==selected %}selected{% endif %}>{{w.name}}</option>{% endfor %}</select> <button>Abrir tabelas</button></form>
 {% if tables %}<form method="post"><input type="hidden" name="csrf" value="{{csrf}}"><input type="hidden" name="workspace" value="{{selected}}">
 <h2>2. Tabelas que serão usadas</h2>{% for t in tables %}<label><input type="checkbox" name="tables" value="{{t.name}}" checked> {{t.name}} <small>({{t.rows}} registros)</small></label>{% endfor %}
@@ -354,10 +355,15 @@ def install(app):
 
     @app.route('/integracoes/whatsapp', methods=['GET', 'POST'])
     def wa_panel():
-        if request.values.get('source') == 'google':
-            return wa_google()
         from data_formulator.model_registry import model_registry
         workspaces = available_workspaces()
+        # Este servidor não inicia a UI web do Data Formulator, então não há
+        # "sessões do sistema" para importar. A conta de serviço Google é o
+        # único caminho. Só mostra o seletor de sessões se ?source=sessions
+        # for pedido explicitamente (instalação local que já tenha sessões).
+        if request.values.get('source') == 'google' or (
+                request.values.get('source') != 'sessions' and not workspaces):
+            return wa_google()
         selected = request.values.get('workspace', '')
         message = ''
         config = {}
