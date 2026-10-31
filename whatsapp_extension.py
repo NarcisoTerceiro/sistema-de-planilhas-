@@ -506,16 +506,23 @@ def install(app):
     worker = Worker(app, root, store)
     worker._lock_path = home / '.whatsapp-worker.lock'
     app.extensions['whatsapp_bridge'] = worker
-    # Importa o conector Google uma única vez, agora, no processo principal e
-    # antes de qualquer requisição ou da thread de restauração. Evita que dois
-    # threads importem o módulo ao mesmo tempo no primeiro acesso e recebam um
-    # módulo parcialmente inicializado (ImportError 'cannot import name'). Se a
-    # importação falhar de verdade, registra o traceback completo para diagnóstico.
+    # Pré-carrega, uma única vez e no processo principal, todos os módulos
+    # pesados usados sob demanda pelo painel, pelo agente e pela restauração.
+    # Sem isto, a thread de restauração do Google e a primeira requisição do
+    # painel importam os mesmos módulos do Data Formulator ao mesmo tempo no
+    # startup e uma delas recebe um módulo parcialmente inicializado
+    # (ImportError 'cannot import name ... circular import'), virando erro 500.
+    # Importar aqui, antes de abrir requisições e antes da thread de
+    # restauração, garante que todos já estejam completos em sys.modules.
     try:
         import google_sheets_data_loader  # noqa: F401
-        log.info('Conector Google Sheets carregado no startup.')
+        from data_formulator.model_registry import model_registry  # noqa: F401
+        from data_formulator.datalake.workspace import Workspace  # noqa: F401
+        from data_formulator.analyst.agent import AnalystAgent  # noqa: F401
+        from data_formulator.agents.client_utils import Client  # noqa: F401
+        log.info('Conector Google e módulos do Data Formulator carregados no startup.')
     except Exception:
-        log.exception('Falha ao importar o conector Google Sheets no startup')
+        log.exception('Falha ao pré-carregar módulos no startup')
     if env_true('WHATSAPP_RESTORE_FROM_GOOGLE'):
         def restore_on_startup():
             try:
