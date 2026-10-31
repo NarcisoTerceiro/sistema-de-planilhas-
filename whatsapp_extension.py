@@ -29,6 +29,11 @@ def log_failure(stage, exc):
         field = str(exc.args[0])
         if re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]{0,70}', field):
             missing = f'; campo ausente={field}'
+    # Mensagens de erro de importação citam apenas nomes de módulos/atributos,
+    # nunca credenciais ou conteúdo de células: são seguras de registrar e
+    # essenciais para diagnosticar falhas de dependência ou import parcial.
+    if isinstance(exc, ImportError):
+        missing += f'; detalhe={str(exc)[:200]}'
     log.error('%s: %s%s; local=%s', stage, type(exc).__name__, missing, location)
 
 
@@ -501,6 +506,16 @@ def install(app):
     worker = Worker(app, root, store)
     worker._lock_path = home / '.whatsapp-worker.lock'
     app.extensions['whatsapp_bridge'] = worker
+    # Importa o conector Google uma única vez, agora, no processo principal e
+    # antes de qualquer requisição ou da thread de restauração. Evita que dois
+    # threads importem o módulo ao mesmo tempo no primeiro acesso e recebam um
+    # módulo parcialmente inicializado (ImportError 'cannot import name'). Se a
+    # importação falhar de verdade, registra o traceback completo para diagnóstico.
+    try:
+        import google_sheets_data_loader  # noqa: F401
+        log.info('Conector Google Sheets carregado no startup.')
+    except Exception:
+        log.exception('Falha ao importar o conector Google Sheets no startup')
     if env_true('WHATSAPP_RESTORE_FROM_GOOGLE'):
         def restore_on_startup():
             try:
