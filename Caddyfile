@@ -1,0 +1,13 @@
+# HTTPS automático via Let's Encrypt. Requer que DOMAIN aponte para o IP
+# público da VM e as portas 80 e 443 abertas. O certificado é emitido e
+# renovado sozinho — a Meta exige HTTPS válido no webhook.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:8000 {
+		# Análises longas: não corta a conexão antes do timeout do gunicorn.
+		transport http {
+			read_timeout 320s
+			write_timeout 320s
+		}
+	}
+}

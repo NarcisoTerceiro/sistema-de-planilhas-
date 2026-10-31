@@ -1,0 +1,37 @@
+# Data Formulator completo + WhatsApp, com HTTPS automático (Caddy).
+# Uso na Oracle/VPS:  docker compose up -d --build
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      DATA_FORMULATOR_HOME: "/data"
+      GOOGLE_SERVICE_ACCOUNT_FILE: "/secrets/google-service-account.json"
+    volumes:
+      - df_data:/data
+      - ./secrets/google-service-account.json:/secrets/google-service-account.json:ro
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      DOMAIN: "${DOMAIN}"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  df_data:
+  caddy_data:
+  caddy_config:

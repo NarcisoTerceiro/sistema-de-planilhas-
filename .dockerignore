@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+venv
+venv311
+__pycache__
+*.pyc
+.env
+.env.*
+secrets/
+*service-account*.json
+data_formulator_home/
+*.sqlite3*
+LEIA-ME*.md
+render.yaml

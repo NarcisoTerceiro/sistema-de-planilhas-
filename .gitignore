@@ -3,6 +3,8 @@
 !.env.example
 .venv/
 venv/
+venv311/
+secrets/
 __pycache__/
 *.pyc
 google-service-account.json
