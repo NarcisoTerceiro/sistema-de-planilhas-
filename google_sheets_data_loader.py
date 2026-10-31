@@ -145,8 +145,11 @@ class GoogleSheetsDataLoader(ExternalDataLoader):
         if not path.is_absolute():
             path = Path(os.environ.get('DATA_FORMULATOR_ENV_DIR', '.')) / path
         try:
-            info = json.loads(path.read_text(encoding='utf-8-sig'))
-        except (OSError, ValueError) as exc:
+            # Lê como bytes: json.loads trata UTF-8 com ou sem BOM sozinho e não
+            # depende do codec de texto 'utf-8-sig', que pode levantar LookupError
+            # em algumas condições do servidor (visto no Render durante o boot).
+            info = json.loads(path.read_bytes())
+        except (OSError, ValueError, LookupError, UnicodeError) as exc:
             raise ValueError('Confira GOOGLE_SERVICE_ACCOUNT_FILE no .env: não consegui ler a chave JSON.') from None
         if info.get('type') != 'service_account' or info.get('token_uri') != 'https://oauth2.googleapis.com/token':
             raise ValueError('O JSON não é uma chave de conta de serviço Google válida.')
