@@ -264,7 +264,7 @@ def install(app):
             raise ValueError('Confira WHATSAPP_GRAPH_VERSION (ex.: vXX.0) e WHATSAPP_PHONE_NUMBER_ID (ID numérico da Meta).')
     @app.before_request
     def protect_panel():
-        if request.path in ('/healthz', '/webhooks/whatsapp'):
+        if request.path in ('/healthz', '/webhooks/whatsapp', '/api/chat'):
             return None
         if user and password:
             auth = request.authorization
@@ -501,6 +501,45 @@ def install(app):
                 log_failure('Teste do agente falhou', exc)
                 answer = 'O agente não concluiu a análise. Confira os logs do Data Formulator. Nenhuma mensagem foi enviada.'
         return render_template_string('''<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Teste do agente</title><body style="font:16px system-ui;max-width:900px;margin:30px auto;padding:20px"><a href="/integracoes/whatsapp">Voltar à integração</a><h1>Teste do agente</h1><h2>Sua pergunta</h2><p>{{question}}</p><h2>Resposta</h2><div style="white-space:pre-wrap">{{answer}}</div><p>Nenhuma mensagem foi enviada ao WhatsApp.</p></body></html>''', question=question, answer=answer)
+
+    @app.route('/api/chat', methods=['GET', 'POST'])
+    def api_chat():
+        # Cliente de terminal (ex.: PowerShell): manda a pergunta com um token
+        # Bearer e recebe a resposta em JSON. Usa o MESMO motor do painel/WhatsApp
+        # (a função ask()), então responde igual ao Data Formulator.
+        token = (os.environ.get('API_CHAT_TOKEN', '').strip()
+                 or os.environ.get('ADMIN_TOKEN', '').strip()
+                 or os.environ.get('WHATSAPP_VERIFY_TOKEN', '').strip())
+        if not token:
+            return jsonify(erro='Defina API_CHAT_TOKEN no servidor.'), 503
+        header = request.headers.get('Authorization', '')
+        enviado = header[7:].strip() if header[:7].lower() == 'bearer ' else (
+            request.args.get('token', '') or request.form.get('token', ''))
+        if not same(enviado, token):
+            return jsonify(erro='Não autorizado. Cabeçalho Authorization: Bearer <token>.'), 401
+        corpo = request.get_json(silent=True) or {}
+        pergunta = (request.args.get('q') or corpo.get('q') or corpo.get('pergunta')
+                    or request.form.get('q') or '').strip()
+        if not pergunta:
+            return jsonify(erro='Envie a pergunta no parâmetro q.'), 400
+        if len(pergunta) > 8000:
+            return jsonify(erro='Pergunta de até 8000 caracteres.'), 400
+        # No plano gratuito o disco é efêmero: se ainda não há publicação,
+        # reconstrói a planilha a partir do Google antes de responder.
+        try:
+            if not (root / 'config.json').exists() and env_true('WHATSAPP_RESTORE_FROM_GOOGLE'):
+                restore_from_google(root)
+        except Exception as exc:
+            log_failure('api/chat: restauração da planilha falhou', exc)
+            return jsonify(erro='Não foi possível carregar a planilha. Confira os logs.', resposta=''), 500
+        with test_lock:
+            try:
+                answer, history, key, revision = ask(app, root, store, 'api-terminal', pergunta)
+                store.save_history(key, revision, history)
+            except Exception as exc:
+                log_failure('api/chat: agente falhou', exc)
+                return jsonify(erro=str(exc), resposta=''), 500
+        return jsonify(pergunta=pergunta, resposta=answer)
 
     test_lock = threading.Lock()
     worker = Worker(app, root, store)
