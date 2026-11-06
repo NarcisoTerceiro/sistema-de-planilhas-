@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from urllib.parse import quote
 
+import pandas as pd
+import pyarrow as pa
 from google.oauth2.service_account import Credentials
 from google.auth.transport.requests import AuthorizedSession
 from data_formulator.data_loader.external_data_loader import (
@@ -43,17 +45,8 @@ def number(value, decimal_dot=False):
     return result / 100 if percent else result
 
 
-def is_coordinate(label):
-    """Coluna de latitude/longitude. Palavras completas por substring (cobre
-    'LATITUDE (GRAUS)', 'LONGITUDE DA OBRA') e formas curtas por igualdade
-    exata (evita casar 'PLATAFORMA', que contém 'LAT')."""
-    return ('LATITUDE' in label or 'LONGITUDE' in label
-            or label in ('LAT', 'LONG', 'LON', 'LNG'))
-
-
 def prepare_rows(rows, title):
     """Padroniza cabeçalho e tipos, sem inventar zero para dado ausente."""
-    import pandas as pd
     if not rows:
         return pd.DataFrame(), MEANINGS.get(title.upper(), '')
     width = max(map(len, rows))
@@ -96,8 +89,7 @@ def prepare_rows(rows, title):
         if values.empty:
             continue
         label = col.upper()
-        numeric = (is_coordinate(label)
-                   or any(word in label for word in ('VALOR', 'ADITIVO', 'REAJUSTE', 'CONTRAPARTIDA', 'PAGO', 'SALDO', 'COMPRIMENTO', 'MEIO FIO', 'ÁREA PAVIMENTADA', '%')))
+        numeric = any(word in label for word in ('VALOR', 'ADITIVO', 'REAJUSTE', 'CONTRAPARTIDA', 'PAGO', 'SALDO', 'COMPRIMENTO', 'MEIO FIO', 'ÁREA PAVIMENTADA', 'LATITUDE', 'LONGITUDE', '%'))
         # Datas formatadas pela API ficam como texto até esta conversão explícita.
         if 'DATA' in label:
             parsed = pd.to_datetime(df[col], dayfirst=True, errors='coerce', format='mixed')
@@ -106,7 +98,7 @@ def prepare_rows(rows, title):
                 continue
         if numeric:
             try:
-                converted = [None if pd.isna(v) else number(v, is_coordinate(label)) for v in df[col]]
+                converted = [None if pd.isna(v) else number(v, label in ('LATITUDE', 'LONGITUDE')) for v in df[col]]
                 df[col] = pd.Series(converted, dtype='float64')
                 continue
             except (ValueError, TypeError):
@@ -145,11 +137,8 @@ class GoogleSheetsDataLoader(ExternalDataLoader):
         if not path.is_absolute():
             path = Path(os.environ.get('DATA_FORMULATOR_ENV_DIR', '.')) / path
         try:
-            # Lê como bytes: json.loads trata UTF-8 com ou sem BOM sozinho e não
-            # depende do codec de texto 'utf-8-sig', que pode levantar LookupError
-            # em algumas condições do servidor (visto no Render durante o boot).
-            info = json.loads(path.read_bytes())
-        except (OSError, ValueError, LookupError, UnicodeError) as exc:
+            info = json.loads(path.read_text(encoding='utf-8-sig'))
+        except (OSError, ValueError) as exc:
             raise ValueError('Confira GOOGLE_SERVICE_ACCOUNT_FILE no .env: não consegui ler a chave JSON.') from None
         if info.get('type') != 'service_account' or info.get('token_uri') != 'https://oauth2.googleapis.com/token':
             raise ValueError('O JSON não é uma chave de conta de serviço Google válida.')
@@ -282,7 +271,6 @@ class GoogleSheetsDataLoader(ExternalDataLoader):
         return self.get_metadata(source_table)
 
     def fetch_data_as_arrow(self, source_table, import_options=None):
-        import pyarrow as pa
         opts = import_options or {}
         if opts.get('filters') or opts.get('source_filters') or opts.get('sort_columns'):
             raise ValueError('Importe a aba completa e peça ao agente para filtrar e ordenar depois.')

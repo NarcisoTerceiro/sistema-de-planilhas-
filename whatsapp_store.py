@@ -23,6 +23,12 @@ class Store:
                 status TEXT NOT NULL DEFAULT 'pending', meta_id TEXT, error TEXT,
                 PRIMARY KEY(job_id, seq));
             ''')
+            # Migração aditiva: colunas de mídia para enviar PDFs (gráficos) na fila.
+            existing = {row['name'] for row in db.execute('PRAGMA table_info(outbox)')}
+            if 'media_path' not in existing:
+                db.execute('ALTER TABLE outbox ADD COLUMN media_path TEXT')
+            if 'filename' not in existing:
+                db.execute('ALTER TABLE outbox ADD COLUMN filename TEXT')
 
     @contextmanager
     def db(self):
@@ -87,14 +93,22 @@ class Store:
             db.execute('INSERT OR REPLACE INTO conversations VALUES(?,?,?,?)',
                        (key, revision, json.dumps(history, ensure_ascii=False), time.time()))
 
-    def ready(self, job_id, chunks, key, revision, history):
+    def ready(self, job_id, chunks, key, revision, history, attachments=None):
         encoded = json.dumps(history, ensure_ascii=False)
+        attachments = attachments or []
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             if db.execute('SELECT 1 FROM outbox WHERE job_id=? LIMIT 1', (job_id,)).fetchone():
                 return False
-            for seq, body in enumerate(chunks):
+            seq = 0
+            for body in chunks:
                 db.execute('INSERT INTO outbox(job_id,seq,body) VALUES(?,?,?)', (job_id, seq, body))
+                seq += 1
+            # Anexos (PDF do gráfico) viram partes de mídia, enviadas após o texto.
+            for item in attachments:
+                db.execute('INSERT INTO outbox(job_id,seq,body,media_path,filename) VALUES(?,?,?,?,?)',
+                           (job_id, seq, item.get('caption', ''), item['path'], item.get('filename', 'grafico.pdf')))
+                seq += 1
             db.execute('INSERT OR REPLACE INTO conversations VALUES(?,?,?,?)',
                        (key, revision, encoded, time.time()))
             db.execute("UPDATE jobs SET status='ready' WHERE id=?", (job_id,))

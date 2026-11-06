@@ -1,10 +1,10 @@
 services:
   - type: web
-    name: chatbot-obras-enxuto
+    name: data-formulator-whatsapp
     runtime: python
     plan: free
     buildCommand: pip install -r requirements-render.txt
-    startCommand: gunicorn --workers 1 --threads 2 --timeout 300 --bind 0.0.0.0:$PORT servidor_chatbot:app
+    startCommand: gunicorn --workers 1 --threads 4 --timeout 300 --bind 0.0.0.0:$PORT servidor_online:app
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION
@@ -13,14 +13,17 @@ services:
         value: 0.0.0.0
       - key: DATA_FORMULATOR_HOME
         value: /tmp/data_formulator
+      - key: WORKSPACE_BACKEND
+        value: local
+      - key: DF_ALLOW_PLUGINS
+        value: '1'
       - key: FLASK_SECRET_KEY
         generateValue: true
+      - key: DISABLE_DISPLAY_KEYS
+        value: 'true'
       - key: WEB_ADMIN_USER
         value: admin
       - key: WEB_ADMIN_PASSWORD
-        sync: false
-      # Token do cliente de terminal (rota /api/chat). Use um valor forte e próprio.
-      - key: API_CHAT_TOKEN
         sync: false
       - key: NVIDIA_ENABLED
         value: 'true'
@@ -34,23 +37,7 @@ services:
         sync: false
       - key: GOOGLE_SERVICE_ACCOUNT_FILE
         value: /etc/secrets/google-service-account.json
-      - key: GOOGLE_SPREADSHEET_ID
-        sync: false
-      - key: WHATSAPP_SHEET_NAMES
-        value: ''
-      - key: WHATSAPP_RESTORE_FROM_GOOGLE
-        value: 'true'
-      - key: WHATSAPP_MEMORY_HOURS
-        value: '24'
       - key: WHATSAPP_ENABLED
         value: 'false'
-      - key: WHATSAPP_ACCESS_TOKEN
-        sync: false
-      - key: WHATSAPP_PHONE_NUMBER_ID
-        sync: false
-      - key: WHATSAPP_GRAPH_VERSION
-        sync: false
-      - key: META_APP_SECRET
-        sync: false
-      - key: WHATSAPP_VERIFY_TOKEN
-        sync: false
+      - key: WHATSAPP_RESTORE_FROM_GOOGLE
+        value: 'true'

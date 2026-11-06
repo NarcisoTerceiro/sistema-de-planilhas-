@@ -9,10 +9,9 @@ import re
 import unicodedata
 import logging
 import time
-import threading
 from pathlib import Path
 
-_GOOGLE_RESTORE_LOCK = threading.Lock()
+import whatsapp_charts
 
 RULES = '''Responda em português do Brasil, somente com fatos obtidos das tabelas disponíveis.
 O canal é WhatsApp. Entregue texto legível e listas; não exponha Python, SQL, caminhos ou logs.
@@ -298,7 +297,7 @@ def ask(app, root, store, sender, question):
     chat_dir = prepare_conversation(root, key, revision, expired=expired, reset=reset)
     history = [] if reset else store.history(key, revision, ttl)
     if reset:
-        return ('Conversa reiniciada. Pode enviar sua pergunta sobre a planilha.', [], key, revision)
+        return ('Conversa reiniciada. Pode enviar sua pergunta sobre a planilha.', [], key, revision, [])
 
     workspace = Workspace(identity_id=identity, workspace_path=chat_dir)
     (chat_dir / 'tmp').mkdir(exist_ok=True)
@@ -311,7 +310,7 @@ def ask(app, root, store, sender, question):
         lines.append('As quantidades são linhas importadas; não representam necessariamente obras válidas.')
         answer = '\n\n'.join(lines)
         history.append({'user_question': question, 'agent_response': answer})
-        return answer, history[-12:], key, revision
+        return answer, history[-12:], key, revision, []
 
     full_model = model_registry.get_config(config['model_id'])
     if not full_model:
@@ -324,7 +323,16 @@ def ask(app, root, store, sender, question):
     # Código gerado deve ter um destino temporário existente no próprio workspace.
     (chat_dir / 'tmp').mkdir(exist_ok=True)
     inputs = [{'name': name} for name in workspace.list_tables()]
-    summary, report, result_tables, interact = '', [], [], ''
+    # O usuário pediu o gráfico em PDF? Então orientamos o agente a visualizar.
+    want_pdf = whatsapp_charts.wants_pdf_chart(question)
+    run_rules = RULES + '\n' + config.get('rules', '')
+    if want_pdf:
+        run_rules += ('\nO usuário pediu um gráfico em PDF. Use a ação visualize para '
+                      'produzir o gráfico adequado a partir dos dados calculados, '
+                      'escolhendo o tipo (bar, line, pie, etc.) e os encodings (x, y, '
+                      'color) coerentes com a pergunta. Além do gráfico, responda em '
+                      'texto com os principais números apresentados nele.')
+    summary, report, result_tables, interact, charts = '', [], [], '', []
     terminal_error = False
     timed_out = False
     overloaded = False
@@ -341,7 +349,7 @@ def ask(app, root, store, sender, question):
                 return (yield from retry_llm_stream(lambda: base(messages, tools), transient))
 
         agent = WhatsAppAnalystAgent(client=client, workspace=workspace,
-                             agent_exploration_rules=RULES + '\n' + config.get('rules', ''),
+                             agent_exploration_rules=run_rules,
                              language_instruction='Responda em português do Brasil.',
                              max_iterations=5, max_repair_attempts=1, identity_id=identity)
         for event in agent.run(input_tables=inputs, user_question=question,
@@ -359,6 +367,20 @@ def ask(app, root, store, sender, question):
                 name = (result.get('virtual') or {}).get('table_name') or result.get('table_name') or result.get('output_table') or result.get('name')
                 if name and name in workspace.list_tables():
                     result_tables.append(name)
+                # Captura a especificação do gráfico (quando o agente visualiza),
+                # para gerar o PDF depois sem chamar a IA novamente.
+                goal = result.get('refined_goal') or {}
+                chart_spec = goal.get('chart') or {}
+                if chart_spec:
+                    inner = result.get('content') or {}
+                    charts.append({
+                        'table_name': (inner.get('virtual') or {}).get('table_name'),
+                        'chart_spec': chart_spec,
+                        'field_metadata': goal.get('field_metadata') or {},
+                        'title': goal.get('title') or goal.get('display_instruction') or '',
+                        'subtitle': goal.get('subtitle') or '',
+                        'rows': inner.get('rows') or [],
+                    })
             elif kind == 'interact':
                 # O agente pode pedir esclarecimento via widget; converte para texto.
                 payload = content or event.get('action_data') or {}
@@ -384,6 +406,36 @@ def ask(app, root, store, sender, question):
         raise TimeoutError('A API de IA excedeu o tempo de espera.')
     if terminal_error or not answer:
         raise RuntimeError('O agente não concluiu a análise com uma resposta utilizável.')
+    # Gera o(s) gráfico(s) em PDF quando o usuário pediu e o agente visualizou.
+    attachments = []
+    if want_pdf and charts and whatsapp_charts.CHARTS_AVAILABLE:
+        media_dir = chat_dir / 'media'
+        for chart in charts[:3]:
+            frame = None
+            tname = chart.get('table_name')
+            try:
+                if tname and tname in workspace.list_tables():
+                    frame = workspace.read_data_as_df(tname)
+            except Exception:
+                frame = None
+            if frame is None:
+                frame = whatsapp_charts.dataframe_from_rows(chart.get('rows'))
+            try:
+                built = whatsapp_charts.build_chart_pdf(
+                    frame, chart['chart_spec'], media_dir,
+                    field_metadata=chart.get('field_metadata'),
+                    title=chart.get('title'), subtitle=chart.get('subtitle'))
+            except Exception as exc:
+                logging.getLogger('whatsapp').warning(
+                    'Falha ao gerar PDF do gráfico: %s', type(exc).__name__)
+                built = None
+            if built:
+                path, filename = built
+                attachments.append({'path': path, 'filename': filename,
+                                    'caption': (chart.get('title') or 'Gráfico')[:900]})
+    if want_pdf and not attachments:
+        answer += ('\n\nObs.: não consegui gerar o gráfico em PDF desta vez. '
+                   'Diga quais dados quer no gráfico (eixos e categorias) que eu tento de novo.')
     answer = format_whatsapp(answer)
     step = {'user_question': question, 'agent_response': answer}
     if result_tables:
@@ -392,7 +444,7 @@ def ask(app, root, store, sender, question):
         step.update(table_name=last, columns=list(frame.columns), row_count=len(frame))
     history.append(step)
     # A memória de texto é limitada; as tabelas de resultados continuam no workspace da conversa.
-    return answer, history[-12:], key, revision
+    return answer, history[-12:], key, revision, attachments
 
 
 def publish(root, workspace_path, selected_tables, model_id, rules):
@@ -428,13 +480,6 @@ def publish(root, workspace_path, selected_tables, model_id, rules):
 
 def restore_from_google(root):
     """Reconstrói os dados publicados após perda do disco temporário no Render Free."""
-    # A restauração automática de inicialização e o primeiro trabalho do WhatsApp
-    # podem coincidir. Serializa as chamadas sem alterar quais abas são lidas.
-    with _GOOGLE_RESTORE_LOCK:
-        return _restore_from_google_locked(root)
-
-
-def _restore_from_google_locked(root):
     from google_sheets_data_loader import GoogleSheetsDataLoader
     from data_formulator.datalake.workspace import Workspace
     from data_formulator.model_registry import model_registry

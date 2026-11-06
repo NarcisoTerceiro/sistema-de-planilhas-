@@ -29,11 +29,6 @@ def log_failure(stage, exc):
         field = str(exc.args[0])
         if re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]{0,70}', field):
             missing = f'; campo ausente={field}'
-    # Mensagens de erro de importação citam apenas nomes de módulos/atributos,
-    # nunca credenciais ou conteúdo de células: são seguras de registrar e
-    # essenciais para diagnosticar falhas de dependência ou import parcial.
-    if isinstance(exc, ImportError):
-        missing += f'; detalhe={str(exc)[:200]}'
     log.error('%s: %s%s; local=%s', stage, type(exc).__name__, missing, location)
 
 
@@ -102,6 +97,41 @@ def send_text(sender, text, reply_to=None):
     return messages[0]['id']
 
 
+def send_document(sender, file_path, filename, caption=None, reply_to=None):
+    """Sobe o PDF para a Cloud API e envia como documento. Retorna o ID da mensagem."""
+    token = os.environ['WHATSAPP_ACCESS_TOKEN']
+    version = os.environ['WHATSAPP_GRAPH_VERSION']
+    phone_id = os.environ['WHATSAPP_PHONE_NUMBER_ID']
+    base = f'https://graph.facebook.com/{version}/{phone_id}'
+    # 1) Upload da mídia para obter um media_id reutilizável.
+    with open(file_path, 'rb') as handle:
+        upload = requests.post(
+            f'{base}/media',
+            headers={'Authorization': f'Bearer {token}'},
+            data={'messaging_product': 'whatsapp', 'type': 'application/pdf'},
+            files={'file': (filename, handle, 'application/pdf')}, timeout=60)
+    if upload.status_code not in (200, 201):
+        raise ValueError(f'Meta recusou o upload do PDF (HTTP {upload.status_code}). Confira token e permissões.')
+    media_id = (upload.json() or {}).get('id')
+    if not media_id:
+        raise requests.exceptions.RequestException('Meta não confirmou o ID da mídia')
+    # 2) Envia a mensagem do tipo documento referenciando a mídia.
+    document = {'id': media_id, 'filename': filename}
+    if caption:
+        document['caption'] = caption[:1000]
+    payload = {'messaging_product': 'whatsapp', 'to': sender, 'type': 'document', 'document': document}
+    if reply_to:
+        payload['context'] = {'message_id': reply_to}
+    response = requests.post(f'{base}/messages',
+                             headers={'Authorization': f'Bearer {token}'}, json=payload, timeout=30)
+    if response.status_code not in (200, 201):
+        raise ValueError(f'Meta recusou o envio do PDF (HTTP {response.status_code}). Confira número e permissões.')
+    messages = (response.json() or {}).get('messages') or []
+    if not messages or not messages[0].get('id'):
+        raise requests.exceptions.RequestException('Meta não confirmou o ID da mensagem')
+    return messages[0]['id']
+
+
 class Worker:
     def __init__(self, app, root, store):
         self.app, self.root, self.store = app, Path(root), store
@@ -142,8 +172,8 @@ class Worker:
             try:
                 if env_true('WHATSAPP_RESTORE_FROM_GOOGLE'):
                     restore_from_google(self.root)
-                answer, history, key, revision = ask(self.app, self.root, self.store, job['sender'], job['body'])
-                self.store.ready(job['id'], split_text(answer), key, revision, history)
+                answer, history, key, revision, attachments = ask(self.app, self.root, self.store, job['sender'], job['body'])
+                self.store.ready(job['id'], split_text(answer), key, revision, history, attachments)
             except Exception as exc:
                 log_failure('Análise WhatsApp interrompida', exc)
                 # Nunca manda uma resposta de dados parcial ou inventada.
@@ -157,8 +187,20 @@ class Worker:
                     job['error'] = 'A análise não concluiu; enviada uma orientação ao usuário.'
         for part in self.store.pending_parts(job['id']):
             self.store.mark_part(job['id'], part['seq'], 'sending')
+            reply_to = job['id'] if part['seq'] == 0 else None
+            media_path = part['media_path'] if 'media_path' in part.keys() else None
             try:
-                meta_id = send_text(job['sender'], part['body'], reply_to=job['id'] if part['seq'] == 0 else None)
+                if media_path:
+                    if not os.path.isfile(media_path):
+                        # Arquivo temporário perdido (ex.: reinício no Render Free).
+                        self.store.mark_part(job['id'], part['seq'], 'failed',
+                                             error='O PDF do gráfico não está mais disponível para envio.')
+                        continue
+                    meta_id = send_document(job['sender'], media_path,
+                                            part['filename'] or 'grafico.pdf',
+                                            caption=part['body'], reply_to=reply_to)
+                else:
+                    meta_id = send_text(job['sender'], part['body'], reply_to=reply_to)
             except requests.exceptions.RequestException:
                 self.store.mark_part(job['id'], part['seq'], 'uncertain', error='Sem confirmação do envio; não reenviado para evitar duplicidade.')
                 self.store.mark_job(job['id'], 'uncertain', 'Verifique no WhatsApp se a mensagem chegou.')
@@ -179,7 +221,6 @@ body{font:16px system-ui;max-width:960px;margin:35px auto;padding:0 20px;color:#
 <section><h2>Origem da planilha</h2><form method="get"><label>De onde deseja importar?<select name="source" onchange="this.form.submit()"><option value="sessions" selected>Sessões do sistema</option><option value="google">Conta de serviço Google</option></select></label><noscript><button>Selecionar origem</button></noscript></form></section>
 {% if message %}<section class="error">{{message}}</section>{% endif %}
 <section><h2>1. Escolha a sessão com a planilha pronta</h2>
-{% if not workspaces %}<p class="error">Nenhuma sessão local encontrada. Este servidor usa a <a href="/integracoes/whatsapp?source=google">conta de serviço Google</a> como origem dos dados.</p>{% endif %}
 <form method="get"><select name="workspace" required><option value="">Selecione</option>{% for w in workspaces %}<option value="{{w.id}}" {% if w.id==selected %}selected{% endif %}>{{w.name}}</option>{% endfor %}</select> <button>Abrir tabelas</button></form>
 {% if tables %}<form method="post"><input type="hidden" name="csrf" value="{{csrf}}"><input type="hidden" name="workspace" value="{{selected}}">
 <h2>2. Tabelas que serão usadas</h2>{% for t in tables %}<label><input type="checkbox" name="tables" value="{{t.name}}" checked> {{t.name}} <small>({{t.rows}} registros)</small></label>{% endfor %}
@@ -264,7 +305,7 @@ def install(app):
             raise ValueError('Confira WHATSAPP_GRAPH_VERSION (ex.: vXX.0) e WHATSAPP_PHONE_NUMBER_ID (ID numérico da Meta).')
     @app.before_request
     def protect_panel():
-        if request.path in ('/healthz', '/webhooks/whatsapp', '/api/chat'):
+        if request.path in ('/healthz', '/webhooks/whatsapp'):
             return None
         if user and password:
             auth = request.authorization
@@ -360,15 +401,11 @@ def install(app):
 
     @app.route('/integracoes/whatsapp', methods=['GET', 'POST'])
     def wa_panel():
+        if request.values.get('source') == 'google':
+            return wa_google()
+        from data_formulator.datalake.workspace import Workspace
         from data_formulator.model_registry import model_registry
         workspaces = available_workspaces()
-        # Este servidor não inicia a UI web do Data Formulator, então não há
-        # "sessões do sistema" para importar. A conta de serviço Google é o
-        # único caminho. Só mostra o seletor de sessões se ?source=sessions
-        # for pedido explicitamente (instalação local que já tenha sessões).
-        if request.values.get('source') == 'google' or (
-                request.values.get('source') != 'sessions' and not workspaces):
-            return wa_google()
         selected = request.values.get('workspace', '')
         message = ''
         config = {}
@@ -379,17 +416,8 @@ def install(app):
         csrf = session.setdefault('wa_csrf', secrets.token_urlsafe(32))
         tables = []
         if selected in workspaces:
-            try:
-                # O painel inicial e o teste da planilha publicada não precisam
-                # importar o Workspace do editor de sessões locais.
-                from data_formulator.datalake.workspace import Workspace
-                workspace = Workspace(identity_id='whatsapp:editor', workspace_path=workspaces[selected])
-                tables = [{'name': name, 'rows': workspace.get_table_metadata(name).row_count} for name in workspace.list_tables()]
-            except Exception as exc:
-                log_failure('Leitura da sessão no painel', exc)
-                message = 'Não foi possível abrir essa sessão. Consulte os logs. A planilha já publicada continua configurada.'
-                if request.method == 'POST':
-                    return Response('Não foi possível abrir a sessão selecionada. Reabra o painel e consulte os logs.', 503)
+            workspace = Workspace(identity_id='whatsapp:editor', workspace_path=workspaces[selected])
+            tables = [{'name': name, 'rows': workspace.get_table_metadata(name).row_count} for name in workspace.list_tables()]
         if request.method == 'POST':
             if not same(request.form.get('csrf', ''), csrf):
                 return Response('Reabra a página e tente novamente.', 403)
@@ -495,84 +523,25 @@ def install(app):
         # A conversa de teste também é serializada; duas abas do painel não misturam resultados.
         with test_lock:
             try:
-                answer, history, key, revision = ask(app, root, store, 'painel-admin-teste', question)
+                answer, history, key, revision, attachments = ask(app, root, store, 'painel-admin-teste', question)
                 store.save_history(key, revision, history)
+                if attachments:
+                    answer += '\n\n[Gráfico gerado em PDF: ' + ', '.join(a['filename'] for a in attachments) + '. No WhatsApp o arquivo é enviado anexado.]'
             except Exception as exc:
                 log_failure('Teste do agente falhou', exc)
                 answer = 'O agente não concluiu a análise. Confira os logs do Data Formulator. Nenhuma mensagem foi enviada.'
         return render_template_string('''<!doctype html><html lang="pt-BR"><meta charset="utf-8"><title>Teste do agente</title><body style="font:16px system-ui;max-width:900px;margin:30px auto;padding:20px"><a href="/integracoes/whatsapp">Voltar à integração</a><h1>Teste do agente</h1><h2>Sua pergunta</h2><p>{{question}}</p><h2>Resposta</h2><div style="white-space:pre-wrap">{{answer}}</div><p>Nenhuma mensagem foi enviada ao WhatsApp.</p></body></html>''', question=question, answer=answer)
 
-    @app.route('/api/chat', methods=['GET', 'POST'])
-    def api_chat():
-        # Cliente de terminal (ex.: PowerShell): manda a pergunta com um token
-        # Bearer e recebe a resposta em JSON. Usa o MESMO motor do painel/WhatsApp
-        # (a função ask()), então responde igual ao Data Formulator.
-        token = (os.environ.get('API_CHAT_TOKEN', '').strip()
-                 or os.environ.get('ADMIN_TOKEN', '').strip()
-                 or os.environ.get('WHATSAPP_VERIFY_TOKEN', '').strip())
-        if not token:
-            return jsonify(erro='Defina API_CHAT_TOKEN no servidor.'), 503
-        header = request.headers.get('Authorization', '')
-        enviado = header[7:].strip() if header[:7].lower() == 'bearer ' else (
-            request.args.get('token', '') or request.form.get('token', ''))
-        if not same(enviado, token):
-            return jsonify(erro='Não autorizado. Cabeçalho Authorization: Bearer <token>.'), 401
-        corpo = request.get_json(silent=True) or {}
-        pergunta = (request.args.get('q') or corpo.get('q') or corpo.get('pergunta')
-                    or request.form.get('q') or '').strip()
-        if not pergunta:
-            return jsonify(erro='Envie a pergunta no parâmetro q.'), 400
-        if len(pergunta) > 8000:
-            return jsonify(erro='Pergunta de até 8000 caracteres.'), 400
-        # No plano gratuito o disco é efêmero: se ainda não há publicação,
-        # reconstrói a planilha a partir do Google antes de responder.
-        try:
-            if not (root / 'config.json').exists() and env_true('WHATSAPP_RESTORE_FROM_GOOGLE'):
-                restore_from_google(root)
-        except Exception as exc:
-            log_failure('api/chat: restauração da planilha falhou', exc)
-            return jsonify(erro='Não foi possível carregar a planilha. Confira os logs.', resposta=''), 500
-        with test_lock:
-            try:
-                answer, history, key, revision = ask(app, root, store, 'api-terminal', pergunta)
-                store.save_history(key, revision, history)
-            except Exception as exc:
-                log_failure('api/chat: agente falhou', exc)
-                return jsonify(erro=str(exc), resposta=''), 500
-        return jsonify(pergunta=pergunta, resposta=answer)
-
     test_lock = threading.Lock()
     worker = Worker(app, root, store)
     worker._lock_path = home / '.whatsapp-worker.lock'
-    app.extensions['whatsapp_bridge'] = worker
-    # Pré-carrega, uma única vez e no processo principal, todos os módulos
-    # pesados usados sob demanda pelo painel, pelo agente e pela restauração.
-    # Sem isto, a thread de restauração do Google e a primeira requisição do
-    # painel importam os mesmos módulos do Data Formulator ao mesmo tempo no
-    # startup e uma delas recebe um módulo parcialmente inicializado
-    # (ImportError 'cannot import name ... circular import'), virando erro 500.
-    # Importar aqui, antes de abrir requisições e antes da thread de
-    # restauração, garante que todos já estejam completos em sys.modules.
-    try:
-        import google_sheets_data_loader  # noqa: F401
-        from data_formulator.model_registry import model_registry  # noqa: F401
-        from data_formulator.datalake.workspace import Workspace  # noqa: F401
-        from data_formulator.analyst.agent import AnalystAgent  # noqa: F401
-        from data_formulator.agents.client_utils import Client  # noqa: F401
-        log.info('Conector Google e módulos do Data Formulator carregados no startup.')
-    except Exception:
-        log.exception('Falha ao pré-carregar módulos no startup')
     if env_true('WHATSAPP_RESTORE_FROM_GOOGLE'):
-        def restore_on_startup():
-            try:
-                restore_from_google(root)
-                log.info('Dados do WhatsApp disponíveis a partir do Google Sheets.')
-            except Exception as exc:
-                log_failure('Restauração do Google pendente', exc)
-
-        # Não bloqueia o início do Gunicorn enquanto baixa e publica as abas.
-        # A rotina continua lendo as mesmas abas e usando os mesmos dados.
-        threading.Thread(target=restore_on_startup, name='whatsapp-google-restore', daemon=True).start()
+        try:
+            restore_from_google(root)
+            log.info('Dados do WhatsApp disponíveis a partir do Google Sheets.')
+        except Exception as exc:
+            log_failure('Restauração do Google pendente', exc)
+    app.extensions['whatsapp_bridge'] = worker
     if enabled and os.environ.get('WHATSAPP_START_WORKER', 'true').lower() == 'true':
         worker.start()
     return worker
