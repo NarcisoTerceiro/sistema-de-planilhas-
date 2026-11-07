@@ -29,5 +29,7 @@ VOLUME ["/data"]
 EXPOSE 8000
 
 # Um único worker (a fila SQLite e o worker do WhatsApp exigem processo único).
-CMD ["gunicorn", "--workers", "1", "--threads", "4", "--timeout", "300", \
-     "--bind", "0.0.0.0:8000", "servidor_online:app"]
+# Forma shell p/ expandir ${PORT}: usa a porta injetada pelo host (ex.: Hyze) e
+# cai para 8000 quando PORT não está definido (Oracle/docker-compose).
+CMD gunicorn --workers 1 --threads 4 --timeout 300 \
+    --bind 0.0.0.0:${PORT:-8000} servidor_online:app

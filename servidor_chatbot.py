@@ -22,6 +22,34 @@ os.environ['DATA_FORMULATOR_ENV_DIR'] = str(ROOT)
 if os.environ.get('RENDER'):
     os.environ.setdefault('HOST', '0.0.0.0')
 
+# Conta de serviço Google via variável de ambiente (p/ hosts sem "arquivo
+# secreto", como a Hyze). Se GOOGLE_SERVICE_ACCOUNT_JSON existir e
+# GOOGLE_SERVICE_ACCOUNT_FILE não, grava o JSON em disco e aponta o arquivo.
+# Aceita o conteúdo do JSON puro ou o mesmo conteúdo em base64.
+_sa_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON', '').strip()
+if _sa_json and not os.environ.get('GOOGLE_SERVICE_ACCOUNT_FILE', '').strip():
+    import json as _json
+    import base64 as _base64
+    _raw = _sa_json
+    if not _raw.lstrip().startswith('{'):
+        try:
+            _raw = _base64.b64decode(_sa_json).decode('utf-8')
+        except Exception:
+            _raw = _sa_json
+    try:
+        _json.loads(_raw)
+    except ValueError:
+        raise RuntimeError(
+            'GOOGLE_SERVICE_ACCOUNT_JSON inválido: cole o conteúdo do JSON da '
+            'chave da conta de serviço (ou o mesmo conteúdo em base64).'
+        )
+    _home = os.environ.get('DATA_FORMULATOR_HOME', str(ROOT))
+    os.makedirs(_home, exist_ok=True)
+    _sa_path = os.path.join(_home, 'google-service-account.json')
+    with open(_sa_path, 'w', encoding='utf-8') as _fh:
+        _fh.write(_raw)
+    os.environ['GOOGLE_SERVICE_ACCOUNT_FILE'] = _sa_path
+
 host = os.environ.get('HOST', '127.0.0.1')
 port = int(os.environ.get('PORT', '5567'))
 online = host not in ('127.0.0.1', 'localhost', '::1')
