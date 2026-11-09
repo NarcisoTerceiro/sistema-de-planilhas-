@@ -1,0 +1,5 @@
+DISPLAY_NAME=sistema-de-planilhas
+DESCRIPTION=Data Formulator + Google Sheets + WhatsApp
+MAIN=servidor_online.py
+MEMORY=1024
+VERSION=LATEST
