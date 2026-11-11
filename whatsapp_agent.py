@@ -522,6 +522,15 @@ def ask(app, root, store, sender, question):
     def build_client(model_config):
         local_client = Client(model_config['endpoint'], model_config['model'], model_config.get('api_key'),
                               model_config.get('api_base'), model_config.get('api_version'))
+        # Groq: roteia pelo provider nativo 'groq' do litellm. Sem isso, o Client
+        # prefixa 'openai/' e o litellm "come" esse prefixo, enviando o nome errado
+        # para a Groq (ex.: openai/gpt-oss-120b -> gpt-oss-120b -> 404). Com 'groq/'
+        # o litellm envia o nome exato e usa a base/chave corretas da Groq.
+        if model_is_provider(model_config, 'groq'):
+            groq_name = str(model_config.get('model') or '')
+            local_client.model = 'groq/' + groq_name
+            local_client.params['custom_llm_provider'] = 'groq'
+            local_client.params.pop('api_base', None)
         local_client.params.update(timeout=ai_timeout(), num_retries=0, max_retries=0)
         return local_client
 
