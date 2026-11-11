@@ -1,0 +1,26 @@
+name: Deploy ShardCloud
+
+# A cada push na branch main, atualiza o app no ShardCloud (APPID vem do .shardcloud)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar a CLI do ShardCloud
+        run: npm install -g shard-cloud-cli
+
+      - name: Login no ShardCloud
+        run: shardcloud login ${{ secrets.SHARDCLOUD_API_KEY }}
+
+      - name: Enviar atualização (commit) para o app
+        run: shardcloud commit
