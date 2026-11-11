@@ -292,6 +292,46 @@ def fallback_model(registry, current_id):
     return None
 
 
+def resolve_primary_model(registry, wanted):
+    """Resolve o modelo principal de forma tolerante.
+
+    Aceita o ID interno OU o nome do modelo (ex.:
+    'nvidia/nemotron-3-ultra-550b-a55b' ou 'meta/llama-3.3-70b-instruct').
+    Se nada casar (ID antigo/órfão depois de reiniciar), cai no primeiro
+    modelo NVIDIA registrado com credenciais válidas. Assim o painel nunca
+    precisa ser republicado só porque o servidor reiniciou.
+
+    Devolve (config, motivo). motivo = 'id' | 'nome' | 'fallback-nvidia' |
+    'nenhum'."""
+    wanted = (wanted or '').strip()
+
+    def usable(cfg):
+        return bool(cfg) and all(cfg.get(k) for k in ('endpoint', 'model'))
+
+    # 1) tentativa direta pelo ID interno publicado/configurado
+    if wanted:
+        cfg = registry.get_config(wanted)
+        if usable(cfg):
+            return cfg, 'id'
+
+    # 2) varre os modelos registrados: casa pelo nome do modelo ou pelo ID,
+    #    e guarda os NVIDIA válidos para o fallback.
+    nvidia_valid = []
+    for item in registry.list_public():
+        cfg = registry.get_config(item.get('id'))
+        if not usable(cfg):
+            continue
+        if wanted and (str(cfg.get('model') or '').strip() == wanted or item.get('id') == wanted):
+            return cfg, 'nome'
+        if model_is_provider(cfg, 'nvidia') and str(cfg.get('api_key') or '').strip():
+            nvidia_valid.append(cfg)
+
+    # 3) fallback: primeiro modelo NVIDIA válido registrado
+    if nvidia_valid:
+        return nvidia_valid[0], 'fallback-nvidia'
+    return None, 'nenhum'
+
+
 def prepare_conversation(root, key, revision, expired=False, reset=False):
     """Troca a geração da conversa sem precisar excluir pastas em uso."""
     parent = Path(root) / 'conversations'
@@ -461,11 +501,14 @@ def ask(app, root, store, sender, question):
     # WHATSAPP_MODEL_ID (se definido) vira o modelo principal; senão, usa o
     # modelo publicado no painel. O outro provedor vira reserva automática.
     primary_id = os.environ.get('WHATSAPP_MODEL_ID', '').strip() or config['model_id']
-    full_model = model_registry.get_config(primary_id)
+    full_model, motivo = resolve_primary_model(model_registry, primary_id)
     if not full_model:
-        raise ValueError('O modelo publicado não está configurado no servidor.')
-    if not all(full_model.get(k) for k in ('endpoint', 'model')):
-        raise ValueError('A configuração do modelo precisa de endpoint e model.')
+        raise ValueError('Nenhum modelo NVIDIA válido está registrado no servidor. '
+                         'Confira NVIDIA_ENABLED, NVIDIA_API_KEY e NVIDIA_MODELS.')
+    if motivo != 'id':
+        logging.getLogger('whatsapp').info(
+            'Modelo principal resolvido por %s: %s (pedido: %r).',
+            motivo, full_model.get('model'), primary_id or '(painel)')
 
     def build_client(model_config):
         local_client = Client(model_config['endpoint'], model_config['model'], model_config.get('api_key'),
