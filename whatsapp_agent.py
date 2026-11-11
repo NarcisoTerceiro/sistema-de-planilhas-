@@ -375,7 +375,7 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
     # Código gerado deve ter um destino temporário existente no próprio workspace.
     (chat_dir / 'tmp').mkdir(exist_ok=True)
     inputs = [{'name': name} for name in workspace.list_tables()]
-    summary, report, result_tables, interact = '', [], [], ''
+    summary, report, result_tables, interact, freetext = '', [], [], '', []
     terminal_error = False
     timed_out = False
     overloaded = False
@@ -409,12 +409,21 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
             kind = event.get('type')
             content = event.get('content')
             if kind == 'completion':
-                summary = str((content or {}).get('summary') or '').strip()
+                data = content or {}
+                # Alguns modelos (ex.: Nemotron) devolvem o texto final em
+                # 'text'/'message'/'content' em vez de 'summary'.
+                summary = str(data.get('summary') or data.get('text')
+                              or data.get('message') or data.get('content') or '').strip()
                 terminal_error = event.get('status') not in ('success', None)
                 llm_error_seen = llm_error_seen or event.get('status') == 'llm_error'
-            elif kind == 'text_delta' and event.get('channel') == 'report':
+            elif kind == 'text_delta':
                 if isinstance(content, str):
-                    report.append(content)
+                    if event.get('channel') == 'report':
+                        report.append(content)
+                    else:
+                        # Texto final "solto" do modelo (resposta sem acao
+                        # commitada). Usado quando nao ha summary/report/resultado.
+                        freetext.append(content)
             elif kind == 'result':
                 result = (content or {}).get('result') or {}
                 name = (result.get('virtual') or {}).get('table_name') or result.get('table_name') or result.get('output_table') or result.get('name')
@@ -439,7 +448,7 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
                 overloaded = overloaded or category == 'overloaded'
                 timed_out = timed_out or category == 'timeout'
 
-    answer = summary or ''.join(report).strip() or interact
+    answer = summary or ''.join(report).strip() or ''.join(freetext).strip() or interact
     # Só apresenta resultados explicitamente emitidos, nunca uma tabela arbitrária antiga.
     narrative = answer
     if result_tables and not terminal_error:
