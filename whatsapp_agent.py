@@ -23,10 +23,14 @@ em destaque e campos em linhas separadas. Separe os itens com uma linha em branc
 Use negrito WhatsApp com um asterisco de cada lado. Inclua somente campos solicitados
 ou indispensáveis para identificar o registro. Não termine oferecendo menus de opções.
 Nomes de abas não comprovam status. Conte registros válidos consultados; linhas vazias,
-cabeçalhos e totais não são novas obras. Não invente contagens, contratos ou sobreposições.
+cabeçalhos e totais não são novas obras. Antes de contar, exclua por código as linhas cujo
+primeiro campo contenha TOTAL, SUBTOTAL, RESUMO ou variações (ex.: TOTAL GERAL, SUBTOTAL,
+RESUMO GERAL); elas nunca entram na contagem. Não invente contagens, contratos ou sobreposições.
 Ao mencionar a origem dos dados, escreva na própria frase “na aba/tabela *NOME*”, usando
 o nome real da aba ou tabela consultada. Exemplo: “Na aba/tabela *EM_ANDAMENTO*, encontrei...”.
-Não some projetos e licitações como obras físicas nem deduplique obras sem identificadores.
+Ao contar obras físicas, use somente as abas EM_ANDAMENTO (consultar STATUS) e
+PAVIMENTAÇÃO (RUA/SITUAÇÃO). EM_PROJETO, EM_LICITAÇÃO e PENDÊNCIAS nunca entram nessa
+contagem. Não some projetos e licitações como obras físicas nem deduplique obras sem identificadores.
 Consulte todas as tabelas relevantes antes de responder. Diferencie obra física, projeto e licitação.
 Em EM_ANDAMENTO o nome da aba não determina o status: consulte STATUS.
 PAVIMENTAÇÃO contém obras físicas; RUA identifica a obra e SITUAÇÃO é o status.
@@ -35,25 +39,37 @@ EM_LICITAÇÃO descreve fases da contratação, não conclusão física. STATUS 
 PENDÊNCIAS e recursos próprios a pagar não são novas obras. A pagar não significa pago.
 Valores contratado, executado e pago são diferentes. Vazio não significa zero.
 REGRAS PARA CÁLCULOS:
-- Toda soma, contagem, média, percentual ou ranking deve ser calculado com a
-  ferramenta de execução de código sobre os dados completos do recorte. Nunca
-  faça aritmética mental nem conte somente amostras, previews ou itens do histórico.
-- Para dinheiro, preserve números já numéricos. Em textos brasileiros, remova
-  R$, espaços e separadores de milhar e interprete a vírgula como decimal.
-  Não aplique essa limpeza de texto a valores já numéricos. Use Decimal a partir
-  de strings ou centavos inteiros para somas monetárias; formate em reais só no fim.
-- Mantenha ausentes e valores inválidos separados. Informe quantos registros
-  possuem o valor solicitado e quantos não possuem; não preencha faltantes com zero.
-- Antes de concluir, confira por código o total contra a soma dos mesmos itens
-  ou grupos que serão apresentados. Se os grupos puderem se sobrepor, explique
-  isso; não force sua soma a coincidir com a quantidade de obras distintas.
-- Confira filtros, status, abas, unidade e denominador. Não misture valor pago,
+- TODO número (contagem, soma, média, percentual, ranking) deve nascer da saída de
+  código executado sobre os dados completos do recorte. É proibido calcular de cabeça,
+  contar visualmente, usar preview/amostra ou repetir número do histórico sem recalcular
+  por código. Se o código falhar, corrija-o e execute de novo; nunca responda com cálculo mental.
+- Contagens: filtre por código, remova linhas de TOTAL/SUBTOTAL/RESUMO e linhas vazias,
+  e use len(df_filtrado) ou df['coluna'].value_counts(). Havendo identificador de obra,
+  conte obras distintas por ele; sem identificador, diga que a contagem é de registros,
+  não de obras únicas.
+- Conferência obrigatória em duas vias para toda resposta quantitativa: (1) calcule o
+  número principal por código; (2) some os grupos (value_counts) e compare com o total
+  do mesmo recorte. Se divergirem, investigue e corrija antes de responder. Sem
+  confirmação, diga que não foi possível confirmar o número; nunca invente total "provável".
+- Copie na resposta EXATAMENTE os números que apareceram na saída do código. Não
+  recalcule nem "ajuste" números na redação; apenas formate (moeda, milhar) no texto final.
+- Para dinheiro, preserve números já numéricos. Em textos brasileiros, remova R$,
+  espaços e separadores de milhar e interprete a vírgula como decimal. Não aplique essa
+  limpeza a valores já numéricos. Use Decimal a partir de strings ou centavos inteiros
+  para somas monetárias; formate em reais só no fim.
+- Mantenha ausentes e valores inválidos separados. Informe quantos registros possuem o
+  valor solicitado e quantos não possuem; não preencha faltantes com zero.
+- Confira filtros, status, abas, unidade e denominador. Se a pergunta tiver filtro
+  (bairro, situação, mês, responsável, tipo...), conte SOMENTE as linhas que passam no
+  filtro e escreva na resposta qual filtro foi aplicado. Não misture valor pago,
   executado e contratado. Não deduplique só pelo nome: contratos e etapas podem
   representar registros diferentes. Percentual agregado exige base explícita;
   não use média simples de percentuais para representar execução financeira total.
-- Copie na resposta os resultados calculados e verificados. Não crie números
-  novos na redação. Se a verificação falhar ou os dados forem insuficientes,
-  explique a limitação e não apresente o total como confirmado.
+- Antes de concluir, confira por código o total contra a soma dos grupos que serão
+  apresentados. Se os grupos puderem se sobrepor, explique isso; não force a soma a
+  coincidir com a quantidade de obras distintas.
+- Se a verificação falhar ou os dados forem insuficientes, explique a limitação e não
+  apresente o total como confirmado.
 Use o histórico para referências como "dessas obras". Não misture filtros de conversas distintas.
 Se a pergunta for ambígua, faça uma pergunta curta de esclarecimento em texto.
 Retorne todos os itens solicitados. Não invente dados ausentes nem corte listas silenciosamente.
@@ -67,17 +83,27 @@ class ServiceOverloadedError(RuntimeError):
     """O provedor informou explicitamente sobrecarga temporária."""
 
 
+class EmptyLLMResponseError(RuntimeError):
+    """O provedor respondeu, mas sem conteúdo utilizável."""
+
+
 def classify_api_error(diagnostic):
     text = str(diagnostic).casefold()
     if 'temporarily overloaded' in text or 'service overloaded' in text:
         return 'overloaded'
-    if any(term in text for term in ('readtimeout', 'apitimeouterror', 'read operation timed out', 'request timed out')):
+    if any(term in text for term in ('readtimeout', 'apitimeouterror', 'read operation timed out', 'request timed out', 'timed out')):
         return 'timeout'
     return 'other'
 
 
-def retry_llm_stream(factory, retryable, attempts=3, wait=time.sleep):
+def retry_llm_stream(factory, retryable, attempts=None, wait=time.sleep):
     """Reabre apenas a chamada à IA; descarta deltas de tentativas incompletas."""
+    if attempts is None:
+        try:
+            attempts = int(os.environ.get('WHATSAPP_LLM_ATTEMPTS', '4'))
+        except ValueError:
+            attempts = 4
+        attempts = max(2, min(attempts, 8))
     for attempt in range(attempts):
         buffered = []
         try:
@@ -94,7 +120,7 @@ def retry_llm_stream(factory, retryable, attempts=3, wait=time.sleep):
         except Exception as exc:
             if attempt + 1 >= attempts or not retryable(exc):
                 raise
-            delay = 2 ** attempt
+            delay = min(2 ** attempt, 8)
             logging.getLogger('whatsapp').warning(
                 'API de IA: falha temporária (%s); nova tentativa %d/%d em %ds.',
                 type(exc).__name__, attempt + 2, attempts, delay)
@@ -236,13 +262,34 @@ def model_is_provider(model_config, provider):
     model_config = model_config if isinstance(model_config, dict) else {}
     endpoint = str(model_config.get('endpoint') or model_config.get('api_base') or '').casefold()
     model = str(model_config.get('model') or '').casefold()
-    provider_name = str(model_config.get('provider') or model_config.get('api_type') or '').casefold()
+    provider_name = str(model_config.get('provider') or model_config.get('api_type')
+                        or model_config.get('provider_display') or '').casefold()
     if provider == 'nvidia':
         return ('nvidia' in endpoint or model.startswith('nvidia/')
                 or provider_name in ('nvidia', 'nvidia_nim', 'nvidia-nim'))
     if provider == 'groq':
         return ('groq' in endpoint or provider_name == 'groq')
     return provider_name == provider.casefold() or provider.casefold() in endpoint
+
+
+def fallback_model(registry, current_id):
+    """Escolhe o modelo de reserva para quando a IA principal falhar.
+
+    Usa WHATSAPP_FALLBACK_MODEL_ID se definido; senão, o primeiro modelo Groq
+    registrado. Devolve None quando não há reserva configurada."""
+    requested = os.environ.get('WHATSAPP_FALLBACK_MODEL_ID', '').strip()
+    candidates = [requested] if requested else []
+    for item in registry.list_public():
+        cfg = registry.get_config(item['id'])
+        if cfg and str(cfg.get('provider_display') or '').casefold() == 'groq':
+            candidates.append(item['id'])
+    for model_id in candidates:
+        if model_id == current_id:
+            continue
+        cfg = registry.get_config(model_id)
+        if cfg and all(cfg.get(k) for k in ('endpoint', 'model')) and str(cfg.get('api_key') or '').strip():
+            return cfg
+    return None
 
 
 def prepare_conversation(root, key, revision, expired=False, reset=False):
@@ -279,6 +326,104 @@ def prepare_conversation(root, key, revision, expired=False, reset=False):
     return target
 
 
+def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history, config, client):
+    """Executa a análise completa com um modelo; devolve (resposta, passo de histórico).
+
+    Levanta ServiceOverloadedError, TimeoutError ou EmptyLLMResponseError quando
+    o problema é do provedor, permitindo ao chamador tentar o modelo de reserva."""
+    from data_formulator.analyst.agent import AnalystAgent
+    # Código gerado deve ter um destino temporário existente no próprio workspace.
+    (chat_dir / 'tmp').mkdir(exist_ok=True)
+    inputs = [{'name': name} for name in workspace.list_tables()]
+    summary, report, result_tables, interact = '', [], [], ''
+    terminal_error = False
+    timed_out = False
+    overloaded = False
+    llm_error_seen = False
+    with app.test_request_context('/internal/whatsapp', headers={'Accept-Language': 'pt-BR'}):
+        class WhatsAppAnalystAgent(AnalystAgent):
+            # Mantém as tentativas do principal, incluindo falhas durante
+            # a leitura do stream. Um único laço evita multiplicar 3 por 3.
+            _MAX_LLM_RETRIES = 1
+            _last_llm_error = None
+
+            def _stream_llm(self, messages, tools):
+                base = super()._stream_llm
+                def transient(exc):
+                    return classify_api_error(str(exc)) == 'overloaded' or self._is_transient_error(exc)
+                try:
+                    return (yield from retry_llm_stream(lambda: base(messages, tools), transient))
+                except Exception as exc:
+                    # O evento 'error' do agente só carrega mensagem genérica;
+                    # guarda o erro real do provedor para o chamador conseguir
+                    # classificar sobrecarga/timeout.
+                    self._last_llm_error = exc
+                    raise
+
+        agent = WhatsAppAnalystAgent(client=client, workspace=workspace,
+                             agent_exploration_rules=RULES + '\n' + config.get('rules', ''),
+                             language_instruction='Responda em português do Brasil.',
+                             max_iterations=6, max_repair_attempts=2, identity_id=identity)
+        for event in agent.run(input_tables=inputs, user_question=question,
+                               focused_thread=history, conversation_id=key):
+            kind = event.get('type')
+            content = event.get('content')
+            if kind == 'completion':
+                summary = str((content or {}).get('summary') or '').strip()
+                terminal_error = event.get('status') not in ('success', None)
+                llm_error_seen = llm_error_seen or event.get('status') == 'llm_error'
+            elif kind == 'text_delta' and event.get('channel') == 'report':
+                if isinstance(content, str):
+                    report.append(content)
+            elif kind == 'result':
+                result = (content or {}).get('result') or {}
+                name = (result.get('virtual') or {}).get('table_name') or result.get('table_name') or result.get('output_table') or result.get('name')
+                if name and name in workspace.list_tables():
+                    result_tables.append(name)
+            elif kind == 'interact':
+                # O agente pode pedir esclarecimento via widget; converte para texto.
+                payload = content or event.get('action_data') or {}
+                questions = payload.get('questions', []) if isinstance(payload, dict) else []
+                texts = [q if isinstance(q, str) else q.get('question', q.get('text', '')) for q in questions]
+                interact = '\n'.join(filter(None, texts)) or 'Pode detalhar sua pergunta para eu consultar a planilha corretamente?'
+            elif kind == 'error':
+                terminal_error = True
+                # O evento traz só mensagem genérica; o erro real fica em
+                # _last_llm_error (setado quando as tentativas se esgotam).
+                raw = getattr(agent, '_last_llm_error', None)
+                diagnostic = ' '.join(filter(None, (
+                    str(raw) if raw is not None else '',
+                    str(content or event.get('message') or ''),
+                ))).casefold()
+                category = classify_api_error(diagnostic)
+                overloaded = overloaded or category == 'overloaded'
+                timed_out = timed_out or category == 'timeout'
+
+    answer = summary or ''.join(report).strip() or interact
+    # Só apresenta resultados explicitamente emitidos, nunca uma tabela arbitrária antiga.
+    narrative = answer
+    if result_tables and not terminal_error:
+        details = '\n\n'.join(table_text(workspace.read_data_as_df(name)) for name in dict.fromkeys(result_tables))
+        answer = (answer + '\n\nDetalhes:\n' if answer else '') + details
+    if terminal_error and overloaded:
+        raise ServiceOverloadedError('O serviço de IA informou sobrecarga temporária.')
+    if terminal_error and timed_out:
+        raise TimeoutError('A API de IA excedeu o tempo de espera.')
+    if not answer:
+        # Resposta vazia do provedor (ou do agente): trata como falha do
+        # provedor para o chamador tentar o modelo de reserva.
+        raise EmptyLLMResponseError('O modelo de IA não devolveu conteúdo utilizável.')
+    if terminal_error:
+        raise RuntimeError('O agente não concluiu a análise com uma resposta utilizável.')
+    answer = format_whatsapp(answer)
+    step = {'user_question': question, 'agent_response': answer}
+    if result_tables:
+        last = result_tables[-1]
+        frame = workspace.read_data_as_df(last)
+        step.update(table_name=last, columns=list(frame.columns), row_count=len(frame))
+    return answer, step
+
+
 def ask(app, root, store, sender, question):
     from data_formulator.datalake.workspace import Workspace
     from data_formulator.analyst.agent import AnalystAgent
@@ -313,86 +458,48 @@ def ask(app, root, store, sender, question):
         history.append({'user_question': question, 'agent_response': answer})
         return answer, history[-12:], key, revision
 
-    full_model = model_registry.get_config(config['model_id'])
+    # WHATSAPP_MODEL_ID (se definido) vira o modelo principal; senão, usa o
+    # modelo publicado no painel. O outro provedor vira reserva automática.
+    primary_id = os.environ.get('WHATSAPP_MODEL_ID', '').strip() or config['model_id']
+    full_model = model_registry.get_config(primary_id)
     if not full_model:
         raise ValueError('O modelo publicado não está configurado no servidor.')
     if not all(full_model.get(k) for k in ('endpoint', 'model')):
         raise ValueError('A configuração do modelo precisa de endpoint e model.')
-    client = Client(full_model['endpoint'], full_model['model'], full_model.get('api_key'),
-                    full_model.get('api_base'), full_model.get('api_version'))
-    client.params.update(timeout=ai_timeout(), num_retries=0, max_retries=0)
-    # Código gerado deve ter um destino temporário existente no próprio workspace.
-    (chat_dir / 'tmp').mkdir(exist_ok=True)
-    inputs = [{'name': name} for name in workspace.list_tables()]
-    summary, report, result_tables, interact = '', [], [], ''
-    terminal_error = False
-    timed_out = False
-    overloaded = False
-    with app.test_request_context('/internal/whatsapp', headers={'Accept-Language': 'pt-BR'}):
-        class WhatsAppAnalystAgent(AnalystAgent):
-            # Mantém as três tentativas do principal, incluindo falhas durante
-            # a leitura do stream. Um único laço evita multiplicar 3 por 3.
-            _MAX_LLM_RETRIES = 1
 
-            def _stream_llm(self, messages, tools):
-                base = super()._stream_llm
-                def transient(exc):
-                    return classify_api_error(str(exc)) == 'overloaded' or self._is_transient_error(exc)
-                return (yield from retry_llm_stream(lambda: base(messages, tools), transient))
+    def build_client(model_config):
+        local_client = Client(model_config['endpoint'], model_config['model'], model_config.get('api_key'),
+                              model_config.get('api_base'), model_config.get('api_version'))
+        local_client.params.update(timeout=ai_timeout(), num_retries=0, max_retries=0)
+        return local_client
 
-        agent = WhatsAppAnalystAgent(client=client, workspace=workspace,
-                             agent_exploration_rules=RULES + '\n' + config.get('rules', ''),
-                             language_instruction='Responda em português do Brasil.',
-                             max_iterations=5, max_repair_attempts=1, identity_id=identity)
-        for event in agent.run(input_tables=inputs, user_question=question,
-                               focused_thread=history, conversation_id=key):
-            kind = event.get('type')
-            content = event.get('content')
-            if kind == 'completion':
-                summary = str((content or {}).get('summary') or '').strip()
-                terminal_error = event.get('status') not in ('success', None)
-            elif kind == 'text_delta' and event.get('channel') == 'report':
-                if isinstance(content, str):
-                    report.append(content)
-            elif kind == 'result':
-                result = (content or {}).get('result') or {}
-                name = (result.get('virtual') or {}).get('table_name') or result.get('table_name') or result.get('output_table') or result.get('name')
-                if name and name in workspace.list_tables():
-                    result_tables.append(name)
-            elif kind == 'interact':
-                # O agente pode pedir esclarecimento via widget; converte para texto.
-                payload = content or event.get('action_data') or {}
-                questions = payload.get('questions', []) if isinstance(payload, dict) else []
-                texts = [q if isinstance(q, str) else q.get('question', q.get('text', '')) for q in questions]
-                interact = '\n'.join(filter(None, texts)) or 'Pode detalhar sua pergunta para eu consultar a planilha corretamente?'
-            elif kind == 'error':
-                terminal_error = True
-                diagnostic = str(content or event).casefold()
-                category = classify_api_error(diagnostic)
-                overloaded = overloaded or category == 'overloaded'
-                timed_out = timed_out or category == 'timeout'
+    # Tentativas: modelo principal (WHATSAPP_MODEL_ID ou o publicado) primeiro;
+    # se indisponível (sobrecarga, timeout ou resposta vazia), o modelo de
+    # outro provedor assume.
+    attempts = [(full_model, None)]
+    reserve = fallback_model(model_registry, primary_id)
+    if reserve:
+        reserve_tag = str(reserve.get('provider_display') or 'reserva').casefold()
+        attempts.append((reserve, reserve_tag))
 
-    answer = summary or ''.join(report).strip() or interact
-    # Só apresenta resultados explicitamente emitidos, nunca uma tabela arbitrária antiga.
-    narrative = answer
-    if result_tables and not terminal_error:
-        details = '\n\n'.join(table_text(workspace.read_data_as_df(name)) for name in dict.fromkeys(result_tables))
-        answer = (answer + '\n\nDetalhes:\n' if answer else '') + details
-    if terminal_error and overloaded:
-        raise ServiceOverloadedError('O serviço de IA informou sobrecarga temporária.')
-    if terminal_error and timed_out:
-        raise TimeoutError('A API de IA excedeu o tempo de espera.')
-    if terminal_error or not answer:
-        raise RuntimeError('O agente não concluiu a análise com uma resposta utilizável.')
-    answer = format_whatsapp(answer)
-    step = {'user_question': question, 'agent_response': answer}
-    if result_tables:
-        last = result_tables[-1]
-        frame = workspace.read_data_as_df(last)
-        step.update(table_name=last, columns=list(frame.columns), row_count=len(frame))
-    history.append(step)
-    # A memória de texto é limitada; as tabelas de resultados continuam no workspace da conversa.
-    return answer, history[-12:], key, revision
+    chat_logger = logging.getLogger('whatsapp')
+    for model_config, tag in attempts:
+        client = build_client(model_config)
+        try:
+            answer, step = run_agent_attempt(app, workspace, chat_dir, identity, key,
+                                             question, history, config, client)
+        except (ServiceOverloadedError, TimeoutError, EmptyLLMResponseError) as exc:
+            if tag is None and len(attempts) > 1:
+                chat_logger.warning('IA principal falhou (%s); assumindo o modelo de reserva (%s).',
+                                    type(exc).__name__, reserve['model'])
+                continue
+            raise
+        if tag:
+            chat_logger.info('Análise concluída pelo modelo de reserva (%s).', tag)
+        history.append(step)
+        # A memória de texto é limitada; as tabelas de resultados continuam no workspace da conversa.
+        return answer, history[-12:], key, revision
+    raise RuntimeError('O agente não concluiu a análise com uma resposta utilizável.')
 
 
 def publish(root, workspace_path, selected_tables, model_id, rules):
@@ -445,11 +552,11 @@ def _restore_from_google_locked(root):
         raise ValueError('Configure GOOGLE_SPREADSHEET_ID para restaurar a planilha no plano gratuito.')
     models = model_registry.list_public()
     requested_model = os.environ.get('WHATSAPP_MODEL_ID', '').strip()
-    nvidia_models = [m for m in models if model_is_provider(model_registry.get_config(m['id']), 'nvidia')]
-    model_id = requested_model or (nvidia_models[0]['id'] if nvidia_models else '')
+    available_models = [m for m in models if model_registry.get_config(m['id'])]
+    model_id = requested_model or (available_models[0]['id'] if available_models else '')
     model_config = model_registry.get_config(model_id) if model_id else None
-    if not model_config or not model_is_provider(model_config, 'nvidia'):
-        raise ValueError('Configure um modelo NVIDIA no painel do Data Formulator ou em WHATSAPP_MODEL_ID para restaurar o WhatsApp.')
+    if not model_config or not all(model_config.get(k) for k in ('endpoint', 'model')):
+        raise ValueError('Configure um modelo de IA no painel do Data Formulator ou em WHATSAPP_MODEL_ID para restaurar o WhatsApp.')
     loader = GoogleSheetsDataLoader()
     requested = {v.strip() for v in os.environ.get('WHATSAPP_SHEET_NAMES', '').split(',') if v.strip()}
     parent = loader.ls()[0]

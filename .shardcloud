@@ -1,5 +1,8 @@
 DISPLAY_NAME=sistema-de-planilhas
 DESCRIPTION=Data Formulator + Google Sheets + WhatsApp
-MAIN=servidor_online.py
 MEMORY=1024
-VERSION=LATEST
+VERSION=3.11
+LANGUAGE=python
+CUSTOM_COMMAND=python -m pip install --quiet gunicorn==23.0.0 && python -m gunicorn --workers 1 --threads 4 --timeout 300 --bind 0.0.0.0:80 servidor_online:app
+SUBDOMAIN=sistema-planilhas
+APPID=c8d49f12-7ec1-4f8f-b23d-0317455821bb

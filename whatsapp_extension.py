@@ -287,6 +287,21 @@ def install(app):
     def wa_health():
         return jsonify(status='ok')
 
+    @app.get('/download-projeto')
+    def download_projeto():
+        """Baixa todos os arquivos do projeto em um ZIP (protegido por login)."""
+        import io
+        import zipfile
+        from flask import send_file
+        projeto = Path(__file__).resolve().parent
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for arquivo in sorted(projeto.iterdir()):
+                if arquivo.is_file() and not arquivo.name.startswith('.env'):
+                    zf.write(arquivo, arquivo.name)
+        buf.seek(0)
+        return send_file(buf, as_attachment=True, download_name='projeto-backup.zip', mimetype='application/zip')
+
     @app.route('/webhooks/whatsapp', methods=['GET', 'POST'])
     def wa_webhook():
         if not enabled:
