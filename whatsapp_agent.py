@@ -301,8 +301,9 @@ def resolve_primary_model(registry, wanted):
     modelo NVIDIA registrado com credenciais válidas. Assim o painel nunca
     precisa ser republicado só porque o servidor reiniciou.
 
-    Devolve (config, motivo). motivo = 'id' | 'nome' | 'fallback-nvidia' |
-    'nenhum'."""
+    Devolve (config, motivo, registrados). motivo = 'id' | 'nome' |
+    'fallback' | 'nenhum'. registrados = nomes dos modelos atualmente
+    registrados no servidor (para diagnóstico no log)."""
     wanted = (wanted or '').strip()
 
     def usable(cfg):
@@ -312,24 +313,24 @@ def resolve_primary_model(registry, wanted):
     if wanted:
         cfg = registry.get_config(wanted)
         if usable(cfg):
-            return cfg, 'id'
+            return cfg, 'id', [cfg.get('model')]
 
-    # 2) varre os modelos registrados: casa pelo nome do modelo ou pelo ID,
-    #    e guarda os NVIDIA válidos para o fallback.
-    nvidia_valid = []
+    # 2) varre os modelos registrados: casa pelo nome do modelo ou pelo ID.
+    validos, registrados = [], []
     for item in registry.list_public():
         cfg = registry.get_config(item.get('id'))
         if not usable(cfg):
             continue
-        if wanted and (str(cfg.get('model') or '').strip() == wanted or item.get('id') == wanted):
-            return cfg, 'nome'
-        if model_is_provider(cfg, 'nvidia') and str(cfg.get('api_key') or '').strip():
-            nvidia_valid.append(cfg)
+        nome = str(cfg.get('model') or '').strip()
+        registrados.append(nome)
+        validos.append(cfg)
+        if wanted and (nome == wanted or item.get('id') == wanted):
+            return cfg, 'nome', registrados
 
-    # 3) fallback: primeiro modelo NVIDIA válido registrado
-    if nvidia_valid:
-        return nvidia_valid[0], 'fallback-nvidia'
-    return None, 'nenhum'
+    # 3) fallback: primeiro modelo válido registrado (qualquer provedor)
+    if validos:
+        return validos[0], 'fallback', registrados
+    return None, 'nenhum', registrados
 
 
 def prepare_conversation(root, key, revision, expired=False, reset=False):
@@ -510,14 +511,15 @@ def ask(app, root, store, sender, question):
     # WHATSAPP_MODEL_ID (se definido) vira o modelo principal; senão, usa o
     # modelo publicado no painel. O outro provedor vira reserva automática.
     primary_id = os.environ.get('WHATSAPP_MODEL_ID', '').strip() or config['model_id']
-    full_model, motivo = resolve_primary_model(model_registry, primary_id)
+    full_model, motivo, registrados = resolve_primary_model(model_registry, primary_id)
     if not full_model:
-        raise ValueError('Nenhum modelo NVIDIA válido está registrado no servidor. '
-                         'Confira NVIDIA_ENABLED, NVIDIA_API_KEY e NVIDIA_MODELS.')
+        raise ValueError('Nenhum modelo válido está registrado no servidor. '
+                         'Confira as variáveis *_ENABLED, *_API_KEY e *_MODELS '
+                         '(ex.: GEMINI_ENABLED=true, GEMINI_API_KEY, GEMINI_MODELS).')
     if motivo != 'id':
-        logging.getLogger('whatsapp').info(
-            'Modelo principal resolvido por %s: %s (pedido: %r).',
-            motivo, full_model.get('model'), primary_id or '(painel)')
+        logging.getLogger('whatsapp').warning(
+            'Modelo principal resolvido por %s: %s (pedido: %r). Modelos registrados: %s',
+            motivo, full_model.get('model'), primary_id or '(painel)', registrados)
 
     def build_client(model_config):
         local_client = Client(model_config['endpoint'], model_config['model'], model_config.get('api_key'),
