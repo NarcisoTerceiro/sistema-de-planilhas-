@@ -327,6 +327,19 @@ def resolve_primary_model(registry, wanted):
         if wanted and (nome == wanted or item.get('id') == wanted):
             return cfg, 'nome', registrados
 
+    # 2.5) sintetiza: o modelo pedido (ex.: 'nvidia/nemotron-3-ultra-550b-a55b')
+    #      nao esta em {PROVIDER}_MODELS, mas o provedor dele esta registrado.
+    #      Usa as credenciais desse provedor (endpoint/chave/base de um modelo ja
+    #      registrado) e troca apenas o nome do modelo. Assim o WHATSAPP_MODEL_ID
+    #      pode escolher qualquer modelo do provedor sem depender do _MODELS.
+    if wanted and '/' in wanted:
+        prefixo = wanted.split('/', 1)[0].strip().lower()
+        for cfg in validos:
+            if str(cfg.get('provider_display') or '').strip().lower() == prefixo:
+                sintetico = dict(cfg)
+                sintetico['model'] = wanted
+                return sintetico, 'sintetizado', registrados
+
     # 3) fallback: primeiro modelo válido registrado (qualquer provedor)
     if validos:
         return validos[0], 'fallback', registrados
