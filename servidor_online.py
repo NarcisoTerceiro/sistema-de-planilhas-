@@ -22,6 +22,18 @@ print('BOOT env -> NVIDIA_ENABLED=%r NVIDIA_MODELS=%r WHATSAPP_MODEL_ID=%r GEMIN
     os.environ.get('NVIDIA_ENABLED'), os.environ.get('NVIDIA_MODELS'),
     os.environ.get('WHATSAPP_MODEL_ID'), os.environ.get('GEMINI_MODELS')), flush=True)
 
+# Contorna host (ShardCloud) que as vezes NAO aplica a troca de NVIDIA_MODELS,
+# deixando um modelo antigo/morto preso. O WHATSAPP_MODEL_ID atualiza normal,
+# entao ele vira a fonte da verdade: se aponta um modelo nvidia que nao esta no
+# NVIDIA_MODELS, substitui o NVIDIA_MODELS por ele (descarta o modelo preso).
+# Precisa rodar ANTES do Data Formulator ler o ambiente e montar o registro.
+_wmid = (os.environ.get('WHATSAPP_MODEL_ID') or '').strip()
+if _wmid.startswith('nvidia/') and (os.environ.get('NVIDIA_ENABLED') or '').strip().lower() == 'true':
+    _cur = [m.strip() for m in (os.environ.get('NVIDIA_MODELS') or '').split(',') if m.strip()]
+    if _wmid not in _cur:
+        os.environ['NVIDIA_MODELS'] = _wmid
+        print('BOOT fix -> NVIDIA_MODELS forcado para %r (via WHATSAPP_MODEL_ID)' % _wmid, flush=True)
+
 if version('data_formulator') != '0.8.0b1':
     raise RuntimeError('Esta integração requer Data Formulator 0.8.0b1.')
 
