@@ -322,7 +322,7 @@ def resolve_primary_model(registry, wanted):
         if not usable(cfg):
             continue
         nome = str(cfg.get('model') or '').strip()
-        registrados.append(nome)
+        registrados.append('%s:%s' % (cfg.get('provider_display') or '?', nome))
         validos.append(cfg)
         if wanted and (nome == wanted or item.get('id') == wanted):
             return cfg, 'nome', registrados
