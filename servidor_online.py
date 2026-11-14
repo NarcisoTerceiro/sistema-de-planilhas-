@@ -16,6 +16,12 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / '.env')
 
+# Diagnostico: imprime os valores REAIS que o app recebe no boot. Ajuda a
+# descobrir quando o host (ShardCloud) nao aplica uma troca de variavel.
+print('BOOT env -> NVIDIA_ENABLED=%r NVIDIA_MODELS=%r WHATSAPP_MODEL_ID=%r GEMINI_MODELS=%r' % (
+    os.environ.get('NVIDIA_ENABLED'), os.environ.get('NVIDIA_MODELS'),
+    os.environ.get('WHATSAPP_MODEL_ID'), os.environ.get('GEMINI_MODELS')), flush=True)
+
 if version('data_formulator') != '0.8.0b1':
     raise RuntimeError('Esta integração requer Data Formulator 0.8.0b1.')
 
