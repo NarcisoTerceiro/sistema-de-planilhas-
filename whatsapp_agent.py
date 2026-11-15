@@ -340,6 +340,23 @@ def resolve_primary_model(registry, wanted):
                 sintetico['model'] = wanted
                 return sintetico, 'sintetizado', registrados
 
+    # 2.6) A API da NVIDIA serve modelos de VARIOS provedores pelo mesmo
+    #      endpoint (ex.: 'zai/glm-5-3-flash', 'minimaxai/minimax-m3.1-flash',
+    #      'stepfun-ai/step-5'). O prefixo desses nao casa com nenhum provedor
+    #      registrado (passo 2.5 falha), mas eles rodam na NVIDIA. Entao, se o
+    #      modelo pedido tem formato 'org/modelo' e existe um provedor NVIDIA
+    #      registrado, usa a config dele (endpoint/chave/base) e envia o nome do
+    #      modelo como veio. Rede de seguranca caso o host nao aplique a troca
+    #      de NVIDIA_MODELS feita no boot.
+    if wanted and '/' in wanted:
+        for cfg in validos:
+            display = str(cfg.get('provider_display') or '').strip().lower()
+            onde = str(cfg.get('api_base') or cfg.get('endpoint') or '').lower()
+            if display == 'nvidia' or 'nvidia' in onde:
+                sintetico = dict(cfg)
+                sintetico['model'] = wanted
+                return sintetico, 'sintetizado-nvidia', registrados
+
     # 3) fallback: primeiro modelo válido registrado (qualquer provedor)
     if validos:
         return validos[0], 'fallback', registrados

@@ -24,11 +24,18 @@ print('BOOT env -> NVIDIA_ENABLED=%r NVIDIA_MODELS=%r WHATSAPP_MODEL_ID=%r GEMIN
 
 # Contorna host (ShardCloud) que as vezes NAO aplica a troca de NVIDIA_MODELS,
 # deixando um modelo antigo/morto preso. O WHATSAPP_MODEL_ID atualiza normal,
-# entao ele vira a fonte da verdade: se aponta um modelo nvidia que nao esta no
-# NVIDIA_MODELS, substitui o NVIDIA_MODELS por ele (descarta o modelo preso).
-# Precisa rodar ANTES do Data Formulator ler o ambiente e montar o registro.
+# entao ele vira a fonte da verdade: registra o modelo escolhido no provedor
+# NVIDIA (descarta o modelo preso). Precisa rodar ANTES do Data Formulator ler
+# o ambiente e montar o registro.
+#
+# A API da NVIDIA (integrate.api.nvidia.com) serve modelos de VARIOS provedores
+# pelo MESMO endpoint. Entao qualquer id no formato 'org/modelo' vale aqui:
+# 'nvidia/nemotron-...', 'zai/glm-5-3-flash', 'minimaxai/minimax-m3.1-flash',
+# 'stepfun-ai/step-5' etc. Basta o '/' no id (modelos Gemini nao tem '/', entao
+# nao sao afetados). Assim da pra testar qualquer modelo do build.nvidia.com
+# trocando SO o WHATSAPP_MODEL_ID.
 _wmid = (os.environ.get('WHATSAPP_MODEL_ID') or '').strip()
-if _wmid.startswith('nvidia/') and (os.environ.get('NVIDIA_ENABLED') or '').strip().lower() == 'true':
+if '/' in _wmid and (os.environ.get('NVIDIA_ENABLED') or '').strip().lower() == 'true':
     _cur = [m.strip() for m in (os.environ.get('NVIDIA_MODELS') or '').split(',') if m.strip()]
     if _wmid not in _cur:
         os.environ['NVIDIA_MODELS'] = _wmid
