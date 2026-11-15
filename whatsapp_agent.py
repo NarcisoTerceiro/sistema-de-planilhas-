@@ -563,6 +563,15 @@ def ask(app, root, store, sender, question):
             local_client.model = 'groq/' + groq_name
             local_client.params['custom_llm_provider'] = 'groq'
             local_client.params.pop('api_base', None)
+        # NVIDIA + modelo com prefixo 'openai/' (ex.: openai/gpt-oss-20b,
+        # openai/gpt-oss-120b): o litellm "come" o primeiro 'openai/' pra
+        # decidir o provedor e mandaria 'gpt-oss-20b' pra NVIDIA -> 404. A
+        # NVIDIA espera o id COMPLETO 'openai/gpt-oss-20b'. Duplicando o
+        # prefixo, depois do corte do litellm sobra o id certo. So afeta
+        # modelos 'openai/...' na NVIDIA; os demais (zai/, minimaxai/,
+        # stepfun-ai/, nvidia/) o litellm nao mexe.
+        elif model_is_provider(model_config, 'nvidia') and str(local_client.model).startswith('openai/'):
+            local_client.model = 'openai/' + local_client.model
         local_client.params.update(timeout=ai_timeout(), num_retries=0, max_retries=0)
         return local_client
 
