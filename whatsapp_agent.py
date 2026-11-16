@@ -431,8 +431,17 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
                     self._last_llm_error = exc
                     raise
 
+        # Toggle opcional de raciocinio (reversivel por variavel de ambiente).
+        # WHATSAPP_THINKING_OFF=true adiciona 'detailed thinking off' nas regras,
+        # que e o comando que desliga o raciocinio dos modelos NVIDIA Nemotron
+        # (mais rapido, mas pode errar perguntas complexas). Apagar a variavel
+        # (ou por 'false') volta ao raciocinio normal. Nao afeta modelos que
+        # ignoram essa instrucao.
+        _regras = RULES + '\n' + config.get('rules', '')
+        if (os.environ.get('WHATSAPP_THINKING_OFF') or '').strip().lower() == 'true':
+            _regras = 'detailed thinking off\n' + _regras
         agent = WhatsAppAnalystAgent(client=client, workspace=workspace,
-                             agent_exploration_rules=RULES + '\n' + config.get('rules', ''),
+                             agent_exploration_rules=_regras,
                              language_instruction='Responda em português do Brasil.',
                              max_iterations=6, max_repair_attempts=2, identity_id=identity)
         for event in agent.run(input_tables=inputs, user_question=question,
