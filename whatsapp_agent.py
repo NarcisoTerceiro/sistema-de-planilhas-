@@ -563,20 +563,22 @@ def ask(app, root, store, sender, question):
             local_client.model = 'groq/' + groq_name
             local_client.params['custom_llm_provider'] = 'groq'
             local_client.params.pop('api_base', None)
-        # NVIDIA + modelo cujo NOME ORIGINAL comeca com 'openai/' (ex.:
-        # openai/gpt-oss-20b, openai/gpt-oss-120b): o litellm "come" o primeiro
-        # 'openai/' pra decidir o provedor e mandaria 'gpt-oss-20b' pra NVIDIA
-        # -> 404. A NVIDIA espera o id COMPLETO 'openai/gpt-oss-20b'. Duplicando
-        # o prefixo, depois do corte do litellm sobra o id certo.
+        # Provedor com base propria (NVIDIA, OpenRouter, etc.) + modelo cujo
+        # NOME ORIGINAL comeca com 'openai/' (ex.: openai/gpt-oss-20b,
+        # openai/gpt-oss-120b): o litellm "come" o primeiro 'openai/' pra
+        # decidir o provedor e mandaria so 'gpt-oss-120b' pra base -> 404. O
+        # provedor espera o id COMPLETO 'openai/gpt-oss-120b'. Duplicando o
+        # prefixo, depois do corte do litellm sobra o id certo.
         #
         # IMPORTANTE: checa o nome ORIGINAL (model_config['model']), NAO o
         # local_client.model. O Client ja prefixa 'openai/' em TODO modelo
         # quando o endpoint e 'openai', entao checar o local_client.model daria
-        # verdadeiro pra qualquer modelo nvidia (ex.: nvidia/nemotron...) e
-        # duplicaria errado -> 'openai/openai/nvidia/...' -> 404. So os modelos
-        # cujo id real ja tem 'openai/' precisam do reforco; os demais (zai/,
-        # minimaxai/, stepfun-ai/, nvidia/) o litellm nao mexe.
-        elif model_is_provider(model_config, 'nvidia') and str(model_config.get('model') or '').startswith('openai/'):
+        # verdadeiro pra qualquer modelo (ex.: nvidia/nemotron...) e duplicaria
+        # errado -> 'openai/openai/nvidia/...' -> 404. So os modelos cujo id real
+        # ja tem 'openai/' precisam do reforco. Exige api_base proprio pra nao
+        # afetar o provedor 'openai' nativo (OpenAI de verdade, que quer o nome
+        # ja sem o prefixo).
+        elif str(model_config.get('api_base') or '').strip() and str(model_config.get('model') or '').startswith('openai/'):
             local_client.model = 'openai/' + str(model_config.get('model') or '')
         local_client.params.update(timeout=ai_timeout(), num_retries=0, max_retries=0)
         return local_client
