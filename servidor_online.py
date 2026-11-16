@@ -34,10 +34,21 @@ print('BOOT env -> NVIDIA_ENABLED=%r NVIDIA_MODELS=%r WHATSAPP_MODEL_ID=%r GEMIN
 # 'stepfun-ai/step-5' etc. Basta o '/' no id (modelos Gemini nao tem '/', entao
 # nao sao afetados). Assim da pra testar qualquer modelo do build.nvidia.com
 # trocando SO o WHATSAPP_MODEL_ID.
+#
+# IMPORTANTE: NAO sequestra o modelo se ele ja pertence a OUTRO provedor (ex.:
+# um modelo listado em OPENROUTER_MODELS como 'google/gemma-...:free'). Sem essa
+# guarda, o BOOT fix jogaria um modelo do OpenRouter no endpoint da NVIDIA -> 404.
+# So forca NVIDIA_MODELS quando o modelo nao esta em nenhum outro *_MODELS.
 _wmid = (os.environ.get('WHATSAPP_MODEL_ID') or '').strip()
 if '/' in _wmid and (os.environ.get('NVIDIA_ENABLED') or '').strip().lower() == 'true':
+    _em_outro = False
+    for _k, _v in os.environ.items():
+        if _k.upper().endswith('_MODELS') and _k.upper() != 'NVIDIA_MODELS':
+            if _wmid in [m.strip() for m in (_v or '').split(',') if m.strip()]:
+                _em_outro = True
+                break
     _cur = [m.strip() for m in (os.environ.get('NVIDIA_MODELS') or '').split(',') if m.strip()]
-    if _wmid not in _cur:
+    if not _em_outro and _wmid not in _cur:
         os.environ['NVIDIA_MODELS'] = _wmid
         print('BOOT fix -> NVIDIA_MODELS forcado para %r (via WHATSAPP_MODEL_ID)' % _wmid, flush=True)
 
