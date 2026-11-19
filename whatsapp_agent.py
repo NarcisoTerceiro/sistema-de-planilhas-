@@ -418,6 +418,21 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
             _MAX_LLM_RETRIES = 1
             _last_llm_error = None
 
+            def _tool_loop(self, messages, max_tool_rounds, *args, **kwargs):
+                # Limita as "voltas" de inspeção por variável de ambiente
+                # (WHATSAPP_MAX_TOOL_ROUNDS). Menos voltas = mais rápido, mas
+                # pergunta complexa pode ser cortada antes de terminar. Sem a
+                # variável, mantém o padrão do Data Formulator (12). Apagar a
+                # variável volta ao normal.
+                _env = (os.environ.get('WHATSAPP_MAX_TOOL_ROUNDS') or '').strip()
+                if _env:
+                    try:
+                        _lim = max(1, int(_env))
+                        max_tool_rounds = min(max_tool_rounds, _lim)
+                    except ValueError:
+                        pass
+                yield from super()._tool_loop(messages, max_tool_rounds, *args, **kwargs)
+
             def _stream_llm(self, messages, tools):
                 base = super()._stream_llm
                 def transient(exc):
