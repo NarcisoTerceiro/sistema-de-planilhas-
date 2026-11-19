@@ -22,6 +22,21 @@ print('BOOT env -> NVIDIA_ENABLED=%r NVIDIA_MODELS=%r WHATSAPP_MODEL_ID=%r GEMIN
     os.environ.get('NVIDIA_ENABLED'), os.environ.get('NVIDIA_MODELS'),
     os.environ.get('WHATSAPP_MODEL_ID'), os.environ.get('GEMINI_MODELS')), flush=True)
 
+# Diagnostico de PROVEDORES: lista TODA variavel _ENABLED / _MODELS / _API_KEY
+# que o sistema enxerga no boot. O registro so cria um provedor quando existe
+# {PREFIXO}_ENABLED=true + {PREFIXO}_API_KEY + {PREFIXO}_MODELS. Se o Claude nao
+# entra, aqui mostra na hora o motivo (escrita errada tipo 'ANTROPIC', chave
+# ausente, variavel que nao chegou, etc.). A chave aparece MASCARADA (so o
+# tamanho e os primeiros caracteres), nunca o valor inteiro.
+print('BOOT providers:', flush=True)
+for _k in sorted(os.environ):
+    _ku = _k.upper()
+    if _ku.endswith('_ENABLED') or _ku.endswith('_MODELS'):
+        print('   %s = %r' % (_k, os.environ.get(_k)), flush=True)
+    elif _ku.endswith('_API_KEY'):
+        _v = os.environ.get(_k) or ''
+        print('   %s = <%d caracteres, começa com %r>' % (_k, len(_v), _v[:7]), flush=True)
+
 # Contorna host (ShardCloud) que as vezes NAO aplica a troca de NVIDIA_MODELS,
 # deixando um modelo antigo/morto preso. O WHATSAPP_MODEL_ID atualiza normal,
 # entao ele vira a fonte da verdade: registra o modelo escolhido no provedor
