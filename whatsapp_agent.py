@@ -421,6 +421,17 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
             def _stream_llm(self, messages, tools):
                 base = super()._stream_llm
                 def transient(exc):
+                    texto = str(exc).casefold()
+                    # Rate limit / cota (ex.: Gemini 429 "20/dia"): NAO adianta
+                    # repetir no mesmo modelo - a cota nao volta em segundos.
+                    # Marca como NAO-transitorio pra erguer na hora e o chamador
+                    # cair direto no modelo reserva (nemotron), em vez de arrastar
+                    # 8 tentativas (~2 min) travado no provedor limitado.
+                    if any(t in texto for t in (
+                            'ratelimiterror', 'rate limit', 'rate_limit', '429',
+                            'quota', 'resource_exhausted', 'too many requests',
+                            'insufficient_quota')):
+                        return False
                     return classify_api_error(str(exc)) == 'overloaded' or self._is_transient_error(exc)
                 try:
                     return (yield from retry_llm_stream(lambda: base(messages, tools), transient))
