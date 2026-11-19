@@ -31,7 +31,7 @@ print('BOOT env -> NVIDIA_ENABLED=%r NVIDIA_MODELS=%r WHATSAPP_MODEL_ID=%r GEMIN
 print('BOOT providers:', flush=True)
 for _k in sorted(os.environ):
     _ku = _k.upper()
-    if _ku.endswith('_ENABLED') or _ku.endswith('_MODELS'):
+    if _ku.endswith('_ENABLED') or _ku.endswith('_MODELS') or _ku.endswith('_API_BASE') or _ku.endswith('_ENDPOINT'):
         print('   %s = %r' % (_k, os.environ.get(_k)), flush=True)
     elif _ku.endswith('_API_KEY'):
         _v = os.environ.get(_k) or ''
