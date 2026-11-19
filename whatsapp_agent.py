@@ -406,35 +406,6 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
     # Código gerado deve ter um destino temporário existente no próprio workspace.
     (chat_dir / 'tmp').mkdir(exist_ok=True)
     inputs = [{'name': name} for name in workspace.list_tables()]
-
-    # Resumo AUTOMATICO das tabelas (colunas + exemplos reais de cada uma) pra
-    # IA nao precisar ficar "indo confirmar" o que cada coluna e a cada pergunta
-    # (principal causa das varias voltas/lentidao, porque as colunas tem nomes
-    # genericos tipo 'Coluna_26'). Montado na hora, lendo a planilha ATUAL ->
-    # adapta sozinho quando surgem colunas/abas novas; nada fica fixo/desatualizado.
-    def _resumo_tabelas():
-        linhas = []
-        for _nome in workspace.list_tables():
-            try:
-                _df = workspace.read_data_as_df(_nome)
-            except Exception:
-                continue
-            linhas.append("Tabela '%s' (%d linhas):" % (_nome, len(_df)))
-            for _col in list(_df.columns):
-                try:
-                    _serie = _df[_col].dropna().astype(str).str.strip()
-                    _serie = _serie[_serie != '']
-                    _vals = list(dict.fromkeys(_serie.tolist()))[:3]
-                except Exception:
-                    _vals = []
-                _ex = ', '.join(repr(v[:40]) for v in _vals) or '(sem exemplos)'
-                linhas.append('  - %s  ->  ex: %s' % (_col, _ex))
-        return '\n'.join(linhas)
-    try:
-        _contexto_tabelas = _resumo_tabelas()
-    except Exception:
-        _contexto_tabelas = ''
-
     summary, report, result_tables, interact, freetext = '', [], [], '', []
     terminal_error = False
     timed_out = False
@@ -478,19 +449,6 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
         # (ou por 'false') volta ao raciocinio normal. Nao afeta modelos que
         # ignoram essa instrucao.
         _regras = RULES + '\n' + config.get('rules', '')
-        # Entrega o resumo das tabelas (colunas + exemplos reais) JA PRONTO pra
-        # IA, com instrucao de usar direto e nao ficar inspecionando pra
-        # descobrir o que cada coluna e. Corta as "voltas pra confirmar".
-        if _contexto_tabelas:
-            _regras = (
-                _regras
-                + "\n\nCONTEXTO DAS TABELAS (ja verificado automaticamente - use DIRETO):\n"
-                + _contexto_tabelas
-                + "\n\nUse os nomes de coluna e os exemplos acima para escrever o codigo"
-                " de analise DE PRIMEIRA. Nao gaste rodadas inspecionando so para"
-                " descobrir colunas ou tipos - isso ja esta acima. So inspecione se"
-                " realmente faltar alguma informacao especifica para responder."
-            )
         if (os.environ.get('WHATSAPP_THINKING_OFF') or '').strip().lower() == 'true':
             _regras = 'detailed thinking off\n' + _regras
         agent = WhatsAppAnalystAgent(client=client, workspace=workspace,
