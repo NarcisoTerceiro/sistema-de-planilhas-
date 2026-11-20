@@ -464,6 +464,23 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
         # (ou por 'false') volta ao raciocinio normal. Nao afeta modelos que
         # ignoram essa instrucao.
         _regras = RULES + '\n' + config.get('rules', '')
+        # Aviso de EFICIENCIA: a IA ja sabe que a planilha e "suja", entao faz a
+        # descoberta + limpeza no PRIMEIRO script (em vez de gastar varias voltas
+        # descobrindo a bagunca). Acelera sem fixar nada da estrutura (a IA ainda
+        # le as colunas atuais na hora, so ja vai sabendo que precisa limpar).
+        _regras = _regras + (
+            "\n\nEFICIENCIA (importante - voce ja sabe disso): a planilha SEMPRE vem"
+            " 'suja' - tem linhas de cabecalho/titulo repetidas no meio dos dados,"
+            " linhas de TOTAL/SUBTOTAL/RESUMO, linhas vazias, colunas com nomes"
+            " genericos (ex.: Coluna_2, Coluna_26) e valores em formato brasileiro"
+            " (R$, virgula decimal). NAO gaste rodadas apenas descobrindo isso - voce"
+            " ja sabe que existe. No seu PRIMEIRO script ja faca tudo junto: olhe"
+            " exemplos de cada coluna para saber o que e, limpe (remova"
+            " cabecalhos/totais/vazias) e trate os numeros, deixando os dados prontos."
+            " Na SEGUNDA rodada faca o calculo. Entregue a resposta ate a TERCEIRA"
+            " rodada; use uma 4a rodada so se REALMENTE faltar algo. Assim que tiver o"
+            " resultado conferido, ENTREGUE - nao fique reinspecionando a toa."
+        )
         if (os.environ.get('WHATSAPP_THINKING_OFF') or '').strip().lower() == 'true':
             _regras = 'detailed thinking off\n' + _regras
         agent = WhatsAppAnalystAgent(client=client, workspace=workspace,
