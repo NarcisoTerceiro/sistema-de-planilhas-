@@ -474,13 +474,14 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
             " linhas de TOTAL/SUBTOTAL/RESUMO, linhas vazias, colunas com nomes"
             " genericos (ex.: Coluna_2, Coluna_26) e valores em formato brasileiro"
             " (R$, virgula decimal). NAO gaste rodadas apenas descobrindo isso - voce"
-            " ja sabe que existe. META: resolver em 2 rodadas. No seu PRIMEIRO"
-            " script faca TUDO de uma vez: olhe exemplos de cada coluna para saber o"
-            " que e, limpe (remova cabecalhos/totais/vazias), trate os numeros E JA"
-            " FACA O CALCULO FINAL, imprimindo o resultado. Na SEGUNDA rodada apenas"
-            " CONFIRA o resultado e ENTREGUE a resposta - nao refaca do zero. Use uma"
-            " 3a rodada so se algo deu errado, e uma 4a so em ultimo caso. Assim que o"
-            " resultado estiver conferido, ENTREGUE - nao fique reinspecionando a toa."
+            " ja sabe que existe. META: resolver em 1 UNICA rodada sempre que"
+            " possivel. No seu PRIMEIRO script faca TUDO: inspecione as colunas"
+            " (imprima exemplos para saber o que cada uma e), limpe (remova"
+            " cabecalhos/totais/vazias), trate os numeros, FACA O CALCULO FINAL e ja"
+            " monte a resposta pronta - tudo nesse mesmo script. ENTREGUE direto nessa"
+            " 1a rodada. Use uma 2a rodada SO se a pergunta for realmente complexa ou"
+            " se o resultado da 1a parecer errado/incompleto, e so o necessario. Nao"
+            " gaste rodadas a toa - responda o mais cedo possivel."
         )
         if (os.environ.get('WHATSAPP_THINKING_OFF') or '').strip().lower() == 'true':
             _regras = 'detailed thinking off\n' + _regras
