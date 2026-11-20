@@ -406,6 +406,25 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
     # Código gerado deve ter um destino temporário existente no próprio workspace.
     (chat_dir / 'tmp').mkdir(exist_ok=True)
     inputs = [{'name': name} for name in workspace.list_tables()]
+
+    # Diagnostico TEMPORARIO e so-leitura: com WHATSAPP_DUMP_TABLES=true, mostra
+    # no log as colunas + as primeiras linhas de cada tabela publicada. Serve pra
+    # ver como a planilha chega (ex.: por que EM_ANDAMENTO vira Coluna_N). Nao
+    # altera nem apaga nada. Apagar a variavel desliga.
+    if (os.environ.get('WHATSAPP_DUMP_TABLES') or '').strip().lower() == 'true':
+        import pandas as _pd
+        _pd.set_option('display.max_columns', None)
+        _pd.set_option('display.width', 1000)
+        for _n in workspace.list_tables():
+            try:
+                _d = workspace.read_data_as_df(_n)
+                print('DUMP tabela %r | %d linhas | colunas = %s'
+                      % (_n, len(_d), list(_d.columns)), flush=True)
+                print(_d.head(6).to_string(), flush=True)
+                print('----', flush=True)
+            except Exception as _e:
+                print('DUMP tabela %r falhou: %s' % (_n, _e), flush=True)
+
     summary, report, result_tables, interact, freetext = '', [], [], '', []
     terminal_error = False
     timed_out = False
