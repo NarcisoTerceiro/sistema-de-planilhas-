@@ -611,15 +611,9 @@ def ask(app, root, store, sender, question):
         history.append({'user_question': question, 'agent_response': answer})
         return answer, history[-12:], key, revision
 
-    # Ordem de prioridade do modelo principal:
-    #   1) modelo_painel  -> escolha feita na página "IA" do painel (ganha de tudo);
-    #   2) WHATSAPP_MODEL_ID -> variável de ambiente;
-    #   3) config['model_id'] -> modelo publicado.
-    # A opção "Usar a variável (automático)" no painel apaga modelo_painel, então
-    # a WHATSAPP_MODEL_ID volta a mandar normalmente. O outro provedor vira reserva.
-    primary_id = ((config.get('modelo_painel') or '').strip()
-                  or os.environ.get('WHATSAPP_MODEL_ID', '').strip()
-                  or config['model_id'])
+    # WHATSAPP_MODEL_ID (se definido) vira o modelo principal; senão, usa o
+    # modelo publicado no painel. O outro provedor vira reserva automática.
+    primary_id = os.environ.get('WHATSAPP_MODEL_ID', '').strip() or config['model_id']
     full_model, motivo, registrados = resolve_primary_model(model_registry, primary_id)
     if not full_model:
         raise ValueError('Nenhum modelo válido está registrado no servidor. '
@@ -713,40 +707,12 @@ def publish(root, workspace_path, selected_tables, model_id, rules):
                     col.description = by_name[col.name].description
             snapshot.add_table_metadata(meta)
         config = {'revision': revision, 'tables': selected_tables, 'model_id': model_id, 'rules': rules}
-        # Preserva a escolha de IA feita no painel (modelo_painel) entre
-        # publicações: republicar tabelas não deve apagar o modelo que o
-        # usuário selecionou na seção "IA" do painel.
-        try:
-            anterior = read_config(root)
-            if isinstance(anterior.get('modelo_painel'), str) and anterior['modelo_painel'].strip():
-                config['modelo_painel'] = anterior['modelo_painel'].strip()
-        except Exception:
-            pass
         temporary = root / ('config-' + revision + '.tmp')
         temporary.write_text(json.dumps(config, ensure_ascii=False), encoding='utf-8')
         os.replace(temporary, root / 'config.json')
     except Exception:
         shutil.rmtree(target, ignore_errors=True)
         raise
-    return config
-
-
-def set_panel_model(root, model_id):
-    """Grava (ou limpa) o modelo de IA escolhido na seção "IA" do painel.
-
-    Preserva todo o resto do config.json. Com model_id vazio, remove a escolha
-    e o robô volta a usar a WHATSAPP_MODEL_ID (ou o modelo publicado). Exige uma
-    publicação já existente (config.json válido)."""
-    root = Path(root)
-    config = read_config(root)
-    model_id = (model_id or '').strip()
-    if model_id:
-        config['modelo_painel'] = model_id
-    else:
-        config.pop('modelo_painel', None)
-    temporary = root / ('config-painel-' + uuid.uuid4().hex + '.tmp')
-    temporary.write_text(json.dumps(config, ensure_ascii=False), encoding='utf-8')
-    os.replace(temporary, root / 'config.json')
     return config
 
 

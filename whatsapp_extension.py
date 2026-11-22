@@ -14,8 +14,7 @@ import requests
 from flask import request, Response, jsonify, render_template_string, session, redirect, url_for
 
 from whatsapp_store import Store
-from whatsapp_agent import (ask, split_text, publish, read_config, phone_key,
-                            restore_from_google, model_is_provider, set_panel_model)
+from whatsapp_agent import ask, split_text, publish, read_config, phone_key, restore_from_google, model_is_provider
 
 log = logging.getLogger('whatsapp')
 
@@ -200,164 +199,25 @@ body{font:16px system-ui;max-width:960px;margin:35px auto;padding:0 20px;color:#
 <p>Envie <code>/reiniciar</code> no WhatsApp para começar outra conversa. Esta versão recebe mensagens de texto.</p></section></html>'''
 
 
-GOOGLE_PANEL = '''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chatbot IA</title>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..900&display=swap" rel="stylesheet">
-<style>@layer base{html,body{margin:0;padding:0}body{overscroll-behavior:none}}::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#bdc9c5;border-radius:8px}.material-symbols-outlined{font-family:'Material Symbols Outlined';font-weight:normal;font-style:normal;line-height:1;vertical-align:middle}</style>
-<script src="https://cdn.tailwindcss.com"></script>
-{% raw %}<script id="tailwind-config">tailwind.config = { theme: { extend: { "colors": { "surface-container": "#e5eff8", "inverse-on-surface": "#e8f2fb", "on-surface-variant": "#3d4946", "surface-variant": "#d9e4ec", "on-primary-container": "#f4fffb", "surface-container-lowest": "#ffffff", "tertiary": "#18675d", "background": "#f5faff", "surface-container-highest": "#d9e4ec", "secondary": "#006d2f", "surface-container-high": "#dfeaf2", "primary": "#00685d", "outline-variant": "#bdc9c5", "secondary-container": "#5dfd8a", "on-secondary-container": "#007232", "primary-container": "#008376", "on-surface": "#131d23", "error": "#ba1a1a", "outline": "#6d7a77", "surface": "#f5faff", "surface-bright": "#f5faff", "surface-container-low": "#eaf5fe" }, "borderRadius": { "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }, "fontFamily": { "sans": ["Inter","system-ui","sans-serif"], "mono": ["JetBrains Mono","monospace"] } } } };</script>{% endraw %}
-</head><body class="bg-background text-on-surface antialiased font-sans min-h-screen">
-<!-- Sidebar -->
-<aside class="hidden lg:flex fixed left-0 top-0 h-full w-64 bg-surface-container-low z-50 flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
-  <div class="flex flex-col">
-    <div class="h-16 px-4 flex items-center gap-3 bg-surface-container-lowest shadow-[0_1px_8px_rgba(0,0,0,0.02)]">
-      <span class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-700 text-white flex items-center justify-center shadow-sm"><span class="material-symbols-outlined text-xl" style="font-variation-settings:'FILL' 1;">smart_toy</span></span>
-      <div class="flex flex-col"><span class="text-lg font-bold text-primary leading-none">Chatbot IA</span><span class="text-[10px] text-outline tracking-widest uppercase mt-0.5">Painel de Controle</span></div>
-    </div>
-    <div class="px-4 py-3 flex flex-col gap-2">
-      <div class="bg-surface-container p-2.5 rounded-lg flex items-center justify-between">
-        <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full {{'bg-secondary animate-pulse' if google_status=='arquivo configurado' else 'bg-error'}}"></span><span class="text-xs font-semibold">Google Sheets</span></div>
-        <span class="material-symbols-outlined text-sm {{'text-secondary' if google_status=='arquivo configurado' else 'text-error'}}">{{'check_circle' if google_status=='arquivo configurado' else 'error'}}</span>
-      </div>
-      <div class="bg-surface-container p-2.5 rounded-lg flex items-center justify-between">
-        <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full {{'bg-secondary animate-pulse' if enabled else 'bg-outline'}}"></span><span class="text-xs font-semibold">WhatsApp / Meta</span></div>
-        <span class="material-symbols-outlined text-sm {{'text-secondary' if enabled else 'text-outline'}}">{{'check_circle' if enabled else 'pending'}}</span>
-      </div>
-    </div>
-  </div>
-  <div class="p-4 flex flex-col gap-2 bg-surface-container-lowest shadow-[0_-1px_4px_rgba(0,0,0,0.02)]">
-    <span class="text-[10px] uppercase text-outline tracking-widest">IA em uso agora</span>
-    {% if modelo_painel %}<span class="text-xs font-mono font-bold text-primary break-all">{{modelo_painel}}</span><span class="text-[10px] text-outline">escolha do painel</span>
-    {% elif env_model %}<span class="text-xs font-mono font-bold text-on-surface break-all">{{env_model}}</span><span class="text-[10px] text-outline">variável WHATSAPP_MODEL_ID</span>
-    {% else %}<span class="text-xs font-mono text-outline">modelo publicado</span>{% endif %}
-    <a href="/chatbot-whatsapp" class="mt-1 text-xs text-primary hover:underline flex items-center gap-1"><span class="material-symbols-outlined text-sm">arrow_back</span>Voltar ao início</a>
-  </div>
-</aside>
-<div class="lg:pl-64">
-<!-- Header -->
-<header class="sticky top-0 z-40 bg-surface-container-lowest/95 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]">
-  <div class="h-16 px-5 flex items-center justify-between gap-4">
-    <div class="flex items-center gap-3">
-      <span class="lg:hidden w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-700 text-white flex items-center justify-center"><span class="material-symbols-outlined text-lg" style="font-variation-settings:'FILL' 1;">smart_toy</span></span>
-      <div class="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-lg"><span class="material-symbols-outlined text-primary text-base">settings_suggest</span><span class="text-sm font-semibold">Configurações do Chatbot IA</span></div>
-    </div>
-    <form method="get" action="/integracoes/whatsapp" class="flex items-center gap-2">
-      <span class="hidden sm:inline text-xs text-outline">Origem:</span>
-      <select name="source" onchange="this.form.submit()" class="text-xs font-semibold rounded-lg border border-outline-variant/60 bg-white px-2.5 py-1.5 focus:outline-none focus:border-primary"><option value="google" selected>Conta de serviço Google</option><option value="sessions">Sessões do sistema</option></select>
-      <noscript><button class="text-xs px-2 py-1 rounded bg-primary text-white">Ir</button></noscript>
-    </form>
-  </div>
-</header>
-<main class="p-5 max-w-[1400px] mx-auto w-full flex flex-col gap-5">
-
-{% if message %}<div class="rounded-xl bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 text-sm flex items-start gap-2.5"><span class="material-symbols-outlined text-amber-600 text-lg">info</span><span>{{message}}</span></div>{% endif %}
-
-<div class="grid grid-cols-1 xl:grid-cols-12 gap-5">
-<!-- Coluna esquerda: dados -->
-<div class="xl:col-span-7 flex flex-col gap-5">
-
-<!-- Card 1: Origem Google -->
-<div class="bg-surface-container-lowest rounded-2xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-slate-200/70 flex flex-col gap-5">
-  <div class="flex items-center gap-3.5 pb-1 border-b border-slate-100">
-    <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-100/70 text-primary flex items-center justify-center border border-emerald-200/60"><span class="material-symbols-outlined text-2xl" style="font-variation-settings:'FILL' 1;">dataset</span></div>
-    <div><span class="text-[11px] font-bold uppercase tracking-wider text-emerald-800/80 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/50">Passo 1 / Planilha</span><h3 class="text-lg font-bold text-slate-900 mt-0.5">Origem de dados: conta de serviço Google</h3></div>
-  </div>
-  <p class="text-xs text-slate-600 -mt-1">Usa o JSON configurado no servidor. Não cole nenhuma chave nesta tela. A planilha precisa estar compartilhada com o e-mail da conta de serviço.</p>
-  <div class="flex flex-col sm:flex-row gap-2.5">
-    <form method="post" action="/integracoes/whatsapp?source=google"><input type="hidden" name="csrf" value="{{csrf}}"><button name="action" value="books" class="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-surface-container-low hover:bg-surface-container text-slate-700 border border-slate-200/80 text-xs font-semibold flex items-center justify-center gap-2 transition-all"><span class="material-symbols-outlined text-base">sync</span>Atualizar lista de planilhas</button></form>
-  </div>
-  {% if books %}<form method="post" action="/integracoes/whatsapp?source=google" class="flex flex-col gap-2"><input type="hidden" name="csrf" value="{{csrf}}">
-    <label class="text-xs font-semibold text-slate-700">Planilha encontrada no Drive</label>
-    <div class="flex flex-col sm:flex-row gap-2.5"><select name="book_id" required class="flex-1 px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:border-primary focus:outline-none">{% for b in books %}<option value="{{b.id}}">{{b.name}}</option>{% endfor %}</select>
-    <button name="action" value="open" class="px-5 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold shrink-0">Abrir abas</button></div></form>{% endif %}
-  <div class="flex flex-col gap-2">
-    <label class="text-xs font-semibold text-slate-700">Ou abra direto pelo ID da planilha</label>
-    <form method="post" action="/integracoes/whatsapp?source=google" class="flex flex-col sm:flex-row gap-2.5"><input type="hidden" name="csrf" value="{{csrf}}">
-      <div class="relative flex-1"><span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">link</span><input name="book_id" value="{{book_id}}" required maxlength="200" placeholder="ID da planilha (não o link completo)" class="w-full pl-10 pr-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs focus:bg-white focus:border-primary focus:outline-none"></div>
-      <button name="action" value="open" class="px-5 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold shrink-0">Abrir pelo ID</button></form>
-  </div>
-  <div class="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200/70 flex items-start gap-3">
-    <span class="material-symbols-outlined text-emerald-700 text-lg shrink-0">auto_fix_high</span>
-    <p class="text-xs text-slate-700 leading-relaxed"><strong class="text-emerald-900">Normalização automática:</strong> se o cabeçalho estiver desalinhado ou irregular, o sistema converte em <span class="font-mono text-emerald-900 bg-white px-1 rounded border border-emerald-300/60">Coluna_1</span>, <span class="font-mono text-emerald-900 bg-white px-1 rounded border border-emerald-300/60">Coluna_2</span>... sem travar a importação.</p>
-  </div>
-</div>
-
-<!-- Card 2: Abas + publicar -->
-{% if tabs %}<div class="bg-surface-container-lowest rounded-2xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-slate-200/70 flex flex-col gap-5">
-  <div class="flex items-center gap-3.5 pb-1 border-b border-slate-100">
-    <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-50 to-emerald-100/70 text-tertiary flex items-center justify-center border border-teal-200/60"><span class="material-symbols-outlined text-2xl" style="font-variation-settings:'FILL' 1;">table_chart</span></div>
-    <div><span class="text-[11px] font-bold uppercase tracking-wider text-teal-800/80 bg-teal-50 px-2 py-0.5 rounded border border-teal-200/50">Passo 2 / Abas</span><h3 class="text-lg font-bold text-slate-900 mt-0.5">Selecione as abas e publique</h3></div>
-  </div>
-  <form method="post" action="/integracoes/whatsapp?source=google" class="flex flex-col gap-4"><input type="hidden" name="csrf" value="{{csrf}}"><input type="hidden" name="book_id" value="{{book_id}}">
-    <label class="flex items-center gap-2 text-sm font-semibold text-slate-800"><input type="checkbox" checked onchange="this.closest('form').querySelectorAll('input[name=tabs]').forEach(x=>x.checked=this.checked)" class="w-4 h-4 accent-emerald-700">Todas as abas</label>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">{% for t in tabs %}<label class="flex items-center gap-2 text-sm text-slate-700 p-2.5 rounded-lg bg-surface-container-low/70 border border-slate-200/70"><input type="checkbox" name="tabs" value="{{t.id}}" checked class="w-4 h-4 accent-emerald-700"> {{t.name}}</label>{% endfor %}</div>
-    <div class="flex flex-col gap-1.5"><label class="text-xs font-semibold text-slate-700">Modelo publicado (padrão do robô)</label>
-      <select name="model_id" required class="px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:border-primary focus:outline-none">{% for m in models %}<option value="{{m.id}}">{{m.model}}</option>{% endfor %}</select>
-      {% if not models %}<p class="text-xs text-error">Nenhum modelo NVIDIA configurado. Configure a API NVIDIA antes de publicar.</p>{% endif %}
-      <p class="text-[11px] text-slate-500">Esse é o modelo padrão salvo na publicação. Você pode trocar a IA a qualquer momento na seção "IA do robô" ao lado, sem republicar.</p></div>
-    <div class="flex flex-col gap-1.5"><label class="text-xs font-semibold text-slate-700">Orientações adicionais (opcional)</label>
-      <textarea name="rules" maxlength="10000" rows="4" placeholder="Regras próprias da sua planilha." class="px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:border-primary focus:outline-none"></textarea></div>
-    <button name="action" value="publish" class="px-6 py-3 rounded-xl bg-gradient-to-r from-[#00685d] via-[#128c7e] to-[#25d366] hover:opacity-95 text-white text-sm font-bold flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(18,140,126,0.3)] transition-all"><span class="material-symbols-outlined text-lg" style="font-variation-settings:'FILL' 1;">rocket_launch</span>Importar e publicar para o WhatsApp</button>
-  </form>
-</div>{% endif %}
-
-<!-- Aviso disco efêmero -->
-<div class="rounded-2xl p-5 bg-amber-50/50 border border-amber-200/70 flex items-start gap-4">
-  <div class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-700 flex items-center justify-center shrink-0 border border-amber-500/25"><span class="material-symbols-outlined text-xl">warning_amber</span></div>
-  <div class="flex flex-col gap-1"><span class="text-xs font-bold text-amber-900 uppercase tracking-wider">Plano grátis — disco efêmero</span>
-    <p class="text-xs text-slate-700 leading-relaxed">Se o disco reiniciar, a configuração volta ao padrão e o sistema reimporta a planilha do Google automaticamente. A escolha de IA do painel também volta para a variável <span class="font-mono">WHATSAPP_MODEL_ID</span> nesse caso.</p></div>
-</div>
-</div>
-
-<!-- Coluna direita: IA + status -->
-<div class="xl:col-span-5 flex flex-col gap-5">
-
-<!-- Card IA: seletor de modelo -->
-<div class="bg-surface-container-lowest rounded-2xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-slate-200/70 flex flex-col gap-5">
-  <div class="flex items-center gap-3.5 pb-1 border-b border-slate-100">
-    <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-50 to-teal-100/70 text-primary flex items-center justify-center border border-emerald-200/60"><span class="material-symbols-outlined text-2xl" style="font-variation-settings:'FILL' 1;">psychology</span></div>
-    <div><span class="text-[11px] font-bold uppercase tracking-wider text-emerald-800/80 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/50">IA do robô</span><h3 class="text-lg font-bold text-slate-900 mt-0.5">Qual IA o robô usa agora</h3></div>
-  </div>
-  <p class="text-xs text-slate-600 -mt-1">Troque a qualquer momento entre os modelos registrados. A escolha aqui passa na frente da variável <span class="font-mono">WHATSAPP_MODEL_ID</span>. Escolha "Usar a variável (automático)" para voltar ao controle pela variável.</p>
-  {% if not published %}<div class="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs">Publique as tabelas primeiro (passos ao lado) para poder fixar uma IA pelo painel.</div>{% endif %}
-  <form method="post" action="/integracoes/whatsapp/modelo" class="flex flex-col gap-2.5"><input type="hidden" name="csrf" value="{{csrf}}">
-    <label class="flex items-start gap-3 p-3.5 rounded-xl cursor-pointer border transition-all {{'bg-gradient-to-r from-emerald-50/60 to-white border-emerald-600/80 shadow-sm' if not modelo_painel else 'bg-surface-container-low/60 border-slate-200/80 hover:border-slate-300'}}">
-      <input type="radio" name="modelo_painel" value="__auto__" {% if not modelo_painel %}checked{% endif %} class="mt-0.5 accent-emerald-700 w-4 h-4">
-      <div class="flex flex-col"><span class="text-sm font-bold text-slate-900">Usar a variável (automático)</span><span class="text-xs text-slate-500 leading-relaxed">O robô segue a variável <span class="font-mono">WHATSAPP_MODEL_ID</span>{% if env_model %} — atualmente <span class="font-mono text-slate-700">{{env_model}}</span>{% endif %}.</span></div>
-    </label>
-    {% for m in all_models %}<label class="flex items-start gap-3 p-3.5 rounded-xl cursor-pointer border transition-all {{'bg-gradient-to-r from-emerald-50/60 to-white border-emerald-600/80 shadow-sm' if m.id==modelo_painel else 'bg-surface-container-low/60 border-slate-200/80 hover:border-slate-300'}}">
-      <input type="radio" name="modelo_painel" value="{{m.id}}" {% if m.id==modelo_painel %}checked{% endif %} class="mt-0.5 accent-emerald-700 w-4 h-4">
-      <div class="flex flex-col min-w-0"><span class="text-sm font-bold text-slate-900 break-all">{{m.model}}</span>{% if m.provider %}<span class="text-[11px] text-slate-500 uppercase tracking-wide">{{m.provider}}</span>{% endif %}</div>
-    </label>{% endfor %}
-    {% if not all_models %}<p class="text-xs text-error">Nenhum modelo registrado. Configure as variáveis *_ENABLED, *_API_KEY e *_MODELS no servidor.</p>{% endif %}
-    <button class="mt-1 px-5 py-2.5 rounded-xl bg-primary hover:bg-[#00554c] text-white text-sm font-semibold flex items-center justify-center gap-2 transition-all"><span class="material-symbols-outlined text-base">save</span>Salvar IA do robô</button>
-  </form>
-</div>
-
-<!-- Card status -->
-<div class="bg-surface-container-lowest rounded-2xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-slate-200/70 flex flex-col gap-3.5">
-  <div class="flex items-center gap-2.5 pb-1 border-b border-slate-100"><span class="material-symbols-outlined text-primary">insights</span><h3 class="text-base font-bold text-slate-900">Estado das conexões</h3></div>
-  <div class="flex items-center justify-between text-sm"><span class="text-slate-600">WhatsApp / Meta</span><span class="font-semibold {{'text-secondary' if enabled else 'text-outline'}}">{{'configurado' if enabled else 'não configurado'}}</span></div>
-  <div class="flex items-center justify-between text-sm"><span class="text-slate-600">Conta de serviço Google</span><span class="font-semibold text-slate-800">{{google_status}}</span></div>
-  <div class="flex items-center justify-between text-sm gap-3"><span class="text-slate-600 shrink-0">Tabelas publicadas</span><span class="font-mono text-xs text-slate-800 text-right break-all">{{config.get('tables',[])|join(', ') or 'nenhuma'}}</span></div>
-  <div class="flex flex-col gap-1 pt-1"><span class="text-xs text-slate-500">Webhook da Meta</span><code class="text-[11px] font-mono bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 break-all">{{webhook}}</code></div>
-  <p class="text-[11px] text-slate-400 leading-relaxed">As chaves e tokens ficam nas variáveis do servidor. Não cole credenciais nesta tela.</p>
-</div>
-
-<!-- Card teste -->
-{% if published %}<div class="bg-surface-container-lowest rounded-2xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-slate-200/70 flex flex-col gap-4">
-  <div class="flex items-center gap-2.5 pb-1 border-b border-slate-100"><span class="material-symbols-outlined text-primary">chat</span><h3 class="text-base font-bold text-slate-900">Testar o agente</h3></div>
-  <p class="text-xs text-slate-600 -mt-1">Usa sua API de IA e uma conversa de teste separada. Não envia nada para ninguém no WhatsApp.</p>
-  <form method="post" action="/integracoes/whatsapp/testar" class="flex flex-col gap-3"><input type="hidden" name="csrf" value="{{csrf}}">
-    <textarea name="question" maxlength="8000" rows="3" required placeholder="Digite uma pergunta de teste..." class="px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-sm focus:bg-white focus:border-primary focus:outline-none"></textarea>
-    <button class="px-5 py-2.5 rounded-xl bg-surface-container-high hover:bg-surface-variant text-slate-800 text-sm font-semibold flex items-center justify-center gap-2"><span class="material-symbols-outlined text-base">send</span>Testar sem enviar WhatsApp</button>
-  </form>
-</div>{% endif %}
-</div>
-</div>
-</main>
-</div>
-</body></html>'''
+GOOGLE_PANEL = '''<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Google Sheets</title>
+<style>body{font:16px system-ui;max-width:850px;margin:30px auto;padding:20px;background:#f6f8fb}section{background:white;padding:20px;margin:18px 0;border-radius:10px}label{display:block;margin:12px 0}input,select,button,textarea{font:inherit;padding:10px;max-width:100%;box-sizing:border-box}textarea{width:100%}button{cursor:pointer}p{line-height:1.5}</style>
+<a href="/chatbot-whatsapp">Voltar ao Chatbot WhatsApp</a><h1>Configurações do Chatbot WhatsApp</h1>
+<section><h2>Origem da planilha</h2><form method="get" action="/integracoes/whatsapp"><label>De onde deseja importar?<select name="source" onchange="this.form.submit()"><option value="sessions">Sessões do sistema</option><option value="google" selected>Conta de serviço Google</option></select></label><noscript><button>Selecionar origem</button></noscript></form></section>
+<p>Usa o JSON configurado no servidor. Não é necessário enviar a chave nesta tela.</p>
+{% if message %}<section role="alert">{{message}}</section>{% endif %}
+<section><h2>1. Escolha a planilha</h2>
+<form method="post" action="/integracoes/whatsapp?source=google"><input type="hidden" name="csrf" value="{{csrf}}"><button name="action" value="books">Atualizar lista de planilhas</button></form>
+{% if books %}<form method="post" action="/integracoes/whatsapp?source=google"><input type="hidden" name="csrf" value="{{csrf}}"><label>Planilha<select name="book_id" required>{% for b in books %}<option value="{{b.id}}">{{b.name}}</option>{% endfor %}</select></label><button name="action" value="open">Abrir abas</button></form>{% endif %}
+<p>Ou abra diretamente pelo ID, sem precisar listar no Drive:</p><form method="post" action="/integracoes/whatsapp?source=google"><input type="hidden" name="csrf" value="{{csrf}}"><label>ID da planilha<input name="book_id" value="{{book_id}}" required maxlength="200"></label><button name="action" value="open">Abrir pelo ID</button></form>
+<p>Para a busca, habilite as APIs Google Drive e Google Sheets. A planilha deve estar compartilhada com o client_email do JSON.</p></section>
+{% if tabs %}<section><h2>2. Selecione as abas</h2><form method="post" action="/integracoes/whatsapp?source=google"><input type="hidden" name="csrf" value="{{csrf}}"><input type="hidden" name="book_id" value="{{book_id}}">
+<label><input type="checkbox" checked onchange="this.form.querySelectorAll('input[name=tabs]').forEach(x=>x.checked=this.checked)"> Todas as abas</label>
+{% for t in tabs %}<label><input type="checkbox" name="tabs" value="{{t.id}}" checked> {{t.name}}</label>{% endfor %}
+<label>Modelo NVIDIA do Chatbot<select name="model_id" required>{% for m in models %}<option value="{{m.id}}">{{m.model}}</option>{% endfor %}</select></label>
+{% if not models %}<p role="alert">Nenhum modelo NVIDIA está configurado. Configure a API NVIDIA no Data Formulator antes de publicar o Chatbot.</p>{% endif %}
+<label>Orientações adicionais<textarea name="rules" maxlength="10000" rows="4"></textarea></label><button name="action" value="publish">Importar e publicar para WhatsApp</button></form></section>{% endif %}
+<p>A importação cria uma cópia para consulta; não altera o Google Sheets. Para atualizar os dados, importe novamente. Abas vazias são ignoradas.</p>
+<p>No Render gratuito, esta escolha pode se perder ao reiniciar. Para recarga automática, configure GOOGLE_SPREADSHEET_ID, WHATSAPP_SHEET_NAMES (vazio = todas) e WHATSAPP_RESTORE_FROM_GOOGLE=true nas variáveis do servidor.</p></html>'''
 
 
 CHATBOT_HOME = '''<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -488,17 +348,6 @@ def install(app):
             if config and model_is_provider(config, provider):
                 models.append(model)
         return models
-
-    def registered_models(registry):
-        """Todos os modelos registrados (qualquer provedor) para o seletor de IA."""
-        out = []
-        for item in registry.list_public():
-            cfg = registry.get_config(item['id']) or {}
-            provider = str(cfg.get('provider_display') or cfg.get('provider')
-                           or cfg.get('api_type') or '').strip()
-            out.append({'id': item['id'], 'model': item.get('model') or item['id'],
-                        'provider': provider})
-        return out
 
     def google_account_status():
         configured = os.environ.get('GOOGLE_SERVICE_ACCOUNT_FILE', '').strip()
@@ -648,39 +497,8 @@ def install(app):
                                'Planilha não encontrada', 'Confira GOOGLE_SERVICE_ACCOUNT_FILE', 'O JSON não é',
                                'Google recusou', 'Falha de conexão')
                 message = str(exc) if isinstance(exc, ValueError) and str(exc).startswith(safe_errors) else 'Não foi possível importar. Confira o JSON, compartilhamento e as APIs Google Sheets e Drive; veja o diagnóstico no terminal.'
-        try:
-            cfg_now = read_config(root)
-        except ValueError:
-            cfg_now = {}
-        return render_template_string(
-            GOOGLE_PANEL, csrf=csrf, books=books, tabs=tabs, book_id=book_id, message=message,
-            models=provider_models(model_registry, 'nvidia'),
-            all_models=registered_models(model_registry),
-            modelo_painel=cfg_now.get('modelo_painel', ''), config=cfg_now,
-            published=bool(cfg_now.get('revision')),
-            env_model=os.environ.get('WHATSAPP_MODEL_ID', '').strip(),
-            google_status=google_account_status(), enabled=enabled,
-            webhook=request.url_root.rstrip('/') + '/webhooks/whatsapp')
-
-    @app.post('/integracoes/whatsapp/modelo')
-    def wa_set_model():
-        from data_formulator.model_registry import model_registry
-        if not same(request.form.get('csrf', ''), session.get('wa_csrf', '')) or not session.get('wa_csrf'):
-            return Response('Reabra o painel e tente novamente.', 403)
-        chosen = request.form.get('modelo_painel', '').strip()
-        if chosen and chosen != '__auto__':
-            if not model_registry.get_config(chosen):
-                return Response('Esse modelo não está registrado no servidor.', 400)
-        else:
-            chosen = ''
-        try:
-            set_panel_model(root, chosen)
-        except ValueError:
-            return Response('Publique as tabelas antes de escolher a IA do robô.', 400)
-        except Exception as exc:
-            log_failure('Salvar modelo do painel', exc)
-            return Response('Não foi possível salvar a escolha da IA. Veja os logs.', 500)
-        return redirect('/integracoes/whatsapp?source=google')
+        return render_template_string(GOOGLE_PANEL, csrf=csrf, books=books, tabs=tabs,
+                                      book_id=book_id, message=message, models=provider_models(model_registry, 'nvidia'))
 
     @app.post('/integracoes/whatsapp/testar')
     def wa_test_agent():
