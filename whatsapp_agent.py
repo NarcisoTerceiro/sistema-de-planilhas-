@@ -152,12 +152,6 @@ def format_whatsapp(text):
     return re.sub(r'\n{3,}', '\n\n', result).strip()
 
 
-def catalog_question(question):
-    text = ''.join(c for c in unicodedata.normalize('NFD', question.casefold()) if not unicodedata.combining(c))
-    return bool(re.search(r'\babas?\b', text) and re.search(r'\b(quais|liste|listar|disponiveis|disponivel)\b', text)
-                and not re.search(r'\b(obras|concluidas|engenheiros|valores|ranking)\b', text))
-
-
 def greeting_question(question):
     """Detecta mensagens que são só saudação (oi, bom dia, tudo bem...),
     sem nenhuma pergunta de verdade junto, para responder curto."""
@@ -169,16 +163,6 @@ def greeting_question(question):
                'hi', 'hey', 'bom', 'boa', 'dia', 'tarde', 'noite', 'tudo', 'bem', 'bom',
                'blz', 'beleza', 'ai', 'e', 'salve', 'oie'}
     return all(word in allowed for word in words)
-
-
-def sheet_label(name):
-    normalized = ''.join(c for c in unicodedata.normalize('NFD', name.casefold()) if not unicodedata.combining(c))
-    for suffix, label in [('em_andamento', 'Em andamento'), ('em_licitacao', 'Em licitação'),
-                           ('em_projeto', 'Em projeto'), ('pavimentacao', 'Pavimentação'),
-                           ('pendencias', 'Pendências'), ('sheet6', 'Sheet6')]:
-        if normalized == suffix or normalized.endswith('_' + suffix):
-            return label
-    return name.replace('_', ' ')
 
 
 def table_text(df):
@@ -444,10 +428,12 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
         _regras = config.get('rules', '')
         if (os.environ.get('WHATSAPP_THINKING_OFF') or '').strip().lower() == 'true':
             _regras = 'detailed thinking off\n' + _regras
+        # Mesmos padrões do Data Formulator original (routes/agents.py):
+        # max_iterations=5 e max_repair_attempts=1.
         agent = WhatsAppAnalystAgent(client=client, workspace=workspace,
                              agent_exploration_rules=_regras,
                              language_instruction='Responda em português do Brasil.',
-                             max_iterations=6, max_repair_attempts=2, identity_id=identity)
+                             max_iterations=5, max_repair_attempts=1, identity_id=identity)
         for event in agent.run(input_tables=inputs, user_question=question,
                                focused_thread=history, conversation_id=key):
             kind = event.get('type')
@@ -547,17 +533,6 @@ def ask(app, root, store, sender, question):
 
     workspace = Workspace(identity_id=identity, workspace_path=chat_dir)
     (chat_dir / 'tmp').mkdir(exist_ok=True)
-    if catalog_question(question):
-        lines = ['*Abas disponíveis para consulta*']
-        for name in config.get('tables', []):
-            if name in workspace.list_tables():
-                meta = workspace.get_table_metadata(name)
-                lines.append(f'— Na aba/tabela *{name}* ({sheet_label(name)}): {meta.row_count} linhas importadas')
-        lines.append('As quantidades são linhas importadas; não representam necessariamente obras válidas.')
-        answer = '\n\n'.join(lines)
-        history.append({'user_question': question, 'agent_response': answer})
-        return answer, history[-12:], key, revision
-
     # WHATSAPP_MODEL_ID (se definido) vira o modelo principal; senão, usa o
     # modelo publicado no painel. O outro provedor vira reserva automática.
     primary_id = os.environ.get('WHATSAPP_MODEL_ID', '').strip() or config['model_id']
