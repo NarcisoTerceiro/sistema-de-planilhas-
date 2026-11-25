@@ -440,16 +440,21 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
             def _tool_loop(self, messages, max_tool_rounds, *args, **kwargs):
                 # Limita as "voltas" de inspeção por variável de ambiente
                 # (WHATSAPP_MAX_TOOL_ROUNDS). Menos voltas = mais rápido, mas
-                # pergunta complexa pode ser cortada antes de terminar. Sem a
-                # variável, mantém o padrão do Data Formulator (12). Apagar a
-                # variável volta ao normal.
+                # pergunta complexa pode ser cortada antes de terminar.
+                # PADRAO RAPIDO: 4 (antes usava o 12 do Data Formulator, que no
+                # WhatsApp - sem streaming e via proxy - deixava a resposta em
+                # 30-60s). Cada volta e uma ida ao modelo em serie; 4 e suficiente
+                # pra inspecionar + limpar + calcular + responder. Suba a variavel
+                # se perguntas complexas estiverem sendo cortadas; ponha 12 pra
+                # voltar ao comportamento original do Data Formulator.
                 _env = (os.environ.get('WHATSAPP_MAX_TOOL_ROUNDS') or '').strip()
+                _lim = 4
                 if _env:
                     try:
                         _lim = max(1, int(_env))
-                        max_tool_rounds = min(max_tool_rounds, _lim)
                     except ValueError:
-                        pass
+                        _lim = 4
+                max_tool_rounds = min(max_tool_rounds, _lim)
                 yield from super()._tool_loop(messages, max_tool_rounds, *args, **kwargs)
 
             def _stream_llm(self, messages, tools):
@@ -502,12 +507,17 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
             " se o resultado da 1a parecer errado/incompleto, e so o necessario. Nao"
             " gaste rodadas a toa - responda o mais cedo possivel."
         )
-        if (os.environ.get('WHATSAPP_THINKING_OFF') or '').strip().lower() == 'true':
+        # PADRAO RAPIDO: raciocinio longo desligado. 'detailed thinking off'
+        # acelera bastante os modelos NVIDIA Nemotron e nao atrapalha os que
+        # ignoram a instrucao. Ponha WHATSAPP_THINKING_OFF=false pra ligar o
+        # raciocinio completo de volta (mais lento, util em pergunta complexa).
+        if (os.environ.get('WHATSAPP_THINKING_OFF') or 'true').strip().lower() != 'false':
             _regras = 'detailed thinking off\n' + _regras
         agent = WhatsAppAnalystAgent(client=client, workspace=workspace,
                              agent_exploration_rules=_regras,
                              language_instruction='Responda em português do Brasil.',
-                             max_iterations=6, max_repair_attempts=2, identity_id=identity)
+                             max_iterations=int(os.environ.get('WHATSAPP_MAX_ITERATIONS', '3')),
+                             max_repair_attempts=2, identity_id=identity)
         for event in agent.run(input_tables=inputs, user_question=question,
                                focused_thread=history, conversation_id=key):
             kind = event.get('type')
