@@ -14,69 +14,13 @@ from pathlib import Path
 
 _GOOGLE_RESTORE_LOCK = threading.Lock()
 
-RULES = '''Responda em português do Brasil, somente com fatos obtidos das tabelas disponíveis.
-O canal é WhatsApp. Entregue texto legível e listas; não exponha Python, SQL, caminhos ou logs.
-Não use tabelas Markdown, barras verticais, blocos de código ou títulos com #.
-Organize listas com travessão (—), um item por bloco. Não use | como separador.
-Comece pela resposta direta. Para listar registros, use um bloco por item, com nome
-em destaque e campos em linhas separadas. Separe os itens com uma linha em branco.
-Use negrito WhatsApp com um asterisco de cada lado. Inclua somente campos solicitados
-ou indispensáveis para identificar o registro. Não termine oferecendo menus de opções.
-Nomes de abas não comprovam status. Conte registros válidos consultados; linhas vazias,
-cabeçalhos e totais não são novas obras. Antes de contar, exclua por código as linhas cujo
-primeiro campo contenha TOTAL, SUBTOTAL, RESUMO ou variações (ex.: TOTAL GERAL, SUBTOTAL,
-RESUMO GERAL); elas nunca entram na contagem. Não invente contagens, contratos ou sobreposições.
-Ao mencionar a origem dos dados, escreva na própria frase “na aba/tabela *NOME*”, usando
-o nome real da aba ou tabela consultada. Exemplo: “Na aba/tabela *EM_ANDAMENTO*, encontrei...”.
-Ao contar obras físicas, use somente as abas EM_ANDAMENTO (consultar STATUS) e
-PAVIMENTAÇÃO (RUA/SITUAÇÃO). EM_PROJETO, EM_LICITAÇÃO e PENDÊNCIAS nunca entram nessa
-contagem. Não some projetos e licitações como obras físicas nem deduplique obras sem identificadores.
-Consulte todas as tabelas relevantes antes de responder. Diferencie obra física, projeto e licitação.
-Em EM_ANDAMENTO o nome da aba não determina o status: consulte STATUS.
-PAVIMENTAÇÃO contém obras físicas; RUA identifica a obra e SITUAÇÃO é o status.
-EM_PROJETO contém projetos técnicos: projeto concluído não é obra fisicamente concluída.
-EM_LICITAÇÃO descreve fases da contratação, não conclusão física. STATUS e OBSERVAÇÕES são distintos.
-PENDÊNCIAS e recursos próprios a pagar não são novas obras. A pagar não significa pago.
-Valores contratado, executado e pago são diferentes. Vazio não significa zero.
-REGRAS PARA CÁLCULOS:
-- TODO número (contagem, soma, média, percentual, ranking) deve nascer da saída de
-  código executado sobre os dados completos do recorte. É proibido calcular de cabeça,
-  contar visualmente, usar preview/amostra ou repetir número do histórico sem recalcular
-  por código. Se o código falhar, corrija-o e execute de novo; nunca responda com cálculo mental.
-- Contagens: filtre por código, remova linhas de TOTAL/SUBTOTAL/RESUMO e linhas vazias,
-  e use len(df_filtrado) ou df['coluna'].value_counts(). Havendo identificador de obra,
-  conte obras distintas por ele; sem identificador, diga que a contagem é de registros,
-  não de obras únicas.
-- Conferência obrigatória em duas vias para toda resposta quantitativa: (1) calcule o
-  número principal por código; (2) some os grupos (value_counts) e compare com o total
-  do mesmo recorte. Se divergirem, investigue e corrija antes de responder. Sem
-  confirmação, diga que não foi possível confirmar o número; nunca invente total "provável".
-- Copie na resposta EXATAMENTE os números que apareceram na saída do código. Não
-  recalcule nem "ajuste" números na redação; apenas formate (moeda, milhar) no texto final.
-- Para dinheiro, preserve números já numéricos. Em textos brasileiros, remova R$,
-  espaços e separadores de milhar e interprete a vírgula como decimal. Não aplique essa
-  limpeza a valores já numéricos. Use Decimal a partir de strings ou centavos inteiros
-  para somas monetárias; formate em reais só no fim.
-- Mantenha ausentes e valores inválidos separados. Informe quantos registros possuem o
-  valor solicitado e quantos não possuem; não preencha faltantes com zero.
-- Confira filtros, status, abas, unidade e denominador. Se a pergunta tiver filtro
-  (bairro, situação, mês, responsável, tipo...), conte SOMENTE as linhas que passam no
-  filtro e escreva na resposta qual filtro foi aplicado. Não misture valor pago,
-  executado e contratado. Não deduplique só pelo nome: contratos e etapas podem
-  representar registros diferentes. Percentual agregado exige base explícita;
-  não use média simples de percentuais para representar execução financeira total.
-- Antes de concluir, confira por código o total contra a soma dos grupos que serão
-  apresentados. Se os grupos puderem se sobrepor, explique isso; não force a soma a
-  coincidir com a quantidade de obras distintas.
-- Se a verificação falhar ou os dados forem insuficientes, explique a limitação e não
-  apresente o total como confirmado.
-Use o histórico para referências como "dessas obras". Não misture filtros de conversas distintas.
-Se a pergunta for ambígua, faça uma pergunta curta de esclarecimento em texto.
-Retorne todos os itens solicitados. Não invente dados ausentes nem corte listas silenciosamente.
-Para listagens, materialize o conjunto em uma tabela de resultado quando necessário à continuidade.
-Finalize com resposta textual explícita. Não encerre depois de apenas imprimir resultados em ferramentas.
-Não busque dados na internet nem carregue outras fontes: utilize somente as tabelas publicadas neste workspace.
-'''
+# Réplica do Data Formulator original: o agente é genérico e serve para QUALQUER
+# planilha. No DF original, agent_exploration_rules nasce vazio ("") e só recebe o
+# que o usuário escreve na interface. Por isso NÃO existe mais um bloco de regras
+# fixo de planilha aqui (antes havia regras específicas de obras/licitação e uma
+# conferência em duas vias que deixava as respostas lentas). A única regra usada é
+# o que o admin digitar em "Orientações adicionais" no painel (config['rules']).
+# A formatação para WhatsApp é feita depois da resposta, por format_whatsapp().
 
 
 class ServiceOverloadedError(RuntimeError):
@@ -212,6 +156,19 @@ def catalog_question(question):
     text = ''.join(c for c in unicodedata.normalize('NFD', question.casefold()) if not unicodedata.combining(c))
     return bool(re.search(r'\babas?\b', text) and re.search(r'\b(quais|liste|listar|disponiveis|disponivel)\b', text)
                 and not re.search(r'\b(obras|concluidas|engenheiros|valores|ranking)\b', text))
+
+
+def greeting_question(question):
+    """Detecta mensagens que são só saudação (oi, bom dia, tudo bem...),
+    sem nenhuma pergunta de verdade junto, para responder curto."""
+    text = ''.join(c for c in unicodedata.normalize('NFD', question.casefold()) if not unicodedata.combining(c))
+    words = re.sub(r'[^a-z\s]', ' ', text).split()
+    if not words or len(words) > 5:
+        return False
+    allowed = {'oi', 'oii', 'oiii', 'ola', 'olaa', 'ei', 'eai', 'opa', 'alo', 'hello',
+               'hi', 'hey', 'bom', 'boa', 'dia', 'tarde', 'noite', 'tudo', 'bem', 'bom',
+               'blz', 'beleza', 'ai', 'e', 'salve', 'oie'}
+    return all(word in allowed for word in words)
 
 
 def sheet_label(name):
@@ -482,26 +439,9 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
         # (mais rapido, mas pode errar perguntas complexas). Apagar a variavel
         # (ou por 'false') volta ao raciocinio normal. Nao afeta modelos que
         # ignoram essa instrucao.
-        _regras = RULES + '\n' + config.get('rules', '')
-        # Aviso de EFICIENCIA: a IA ja sabe que a planilha e "suja", entao faz a
-        # descoberta + limpeza no PRIMEIRO script (em vez de gastar varias voltas
-        # descobrindo a bagunca). Acelera sem fixar nada da estrutura (a IA ainda
-        # le as colunas atuais na hora, so ja vai sabendo que precisa limpar).
-        _regras = _regras + (
-            "\n\nEFICIENCIA (importante - voce ja sabe disso): a planilha SEMPRE vem"
-            " 'suja' - tem linhas de cabecalho/titulo repetidas no meio dos dados,"
-            " linhas de TOTAL/SUBTOTAL/RESUMO, linhas vazias, colunas com nomes"
-            " genericos (ex.: Coluna_2, Coluna_26) e valores em formato brasileiro"
-            " (R$, virgula decimal). NAO gaste rodadas apenas descobrindo isso - voce"
-            " ja sabe que existe. META: resolver em 1 UNICA rodada sempre que"
-            " possivel. No seu PRIMEIRO script faca TUDO: inspecione as colunas"
-            " (imprima exemplos para saber o que cada uma e), limpe (remova"
-            " cabecalhos/totais/vazias), trate os numeros, FACA O CALCULO FINAL e ja"
-            " monte a resposta pronta - tudo nesse mesmo script. ENTREGUE direto nessa"
-            " 1a rodada. Use uma 2a rodada SO se a pergunta for realmente complexa ou"
-            " se o resultado da 1a parecer errado/incompleto, e so o necessario. Nao"
-            " gaste rodadas a toa - responda o mais cedo possivel."
-        )
+        # Igual ao Data Formulator original: usa somente as "Orientações adicionais"
+        # digitadas no painel (vazio por padrão). Sem regras fixas de planilha.
+        _regras = config.get('rules', '')
         if (os.environ.get('WHATSAPP_THINKING_OFF') or '').strip().lower() == 'true':
             _regras = 'detailed thinking off\n' + _regras
         agent = WhatsAppAnalystAgent(client=client, workspace=workspace,
@@ -597,6 +537,13 @@ def ask(app, root, store, sender, question):
     history = [] if reset else store.history(key, revision, ttl)
     if reset:
         return ('Conversa reiniciada. Pode enviar sua pergunta sobre a planilha.', [], key, revision)
+
+    # Saudação simples ("oi", "bom dia", "tudo bem"): responde curto, sem rodar
+    # o agente e sem textão. Personalizável pela variável WHATSAPP_GREETING.
+    if greeting_question(question):
+        saudacao = os.environ.get('WHATSAPP_GREETING', '').strip() or 'Oi! Tudo bem? Como posso te ajudar?'
+        history.append({'user_question': question, 'agent_response': saudacao})
+        return saudacao, history[-12:], key, revision
 
     workspace = Workspace(identity_id=identity, workspace_path=chat_dir)
     (chat_dir / 'tmp').mkdir(exist_ok=True)
