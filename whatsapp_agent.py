@@ -14,11 +14,24 @@ from pathlib import Path
 
 _GOOGLE_RESTORE_LOCK = threading.Lock()
 
-# Igual ao Data Formulator original: o agente é genérico e NÃO recebe um bloco de
-# regras fixo. No DF, agent_exploration_rules nasce vazio ("") e só recebe o que o
-# usuário digita na interface. A única personalização é o campo "Orientações
-# adicionais" do painel (config['rules']). A formatação para WhatsApp é feita depois
-# da resposta, por format_whatsapp().
+# Agente igual ao Data Formulator original: NÃO recebe bloco de regras de planilha
+# (no DF, agent_exploration_rules nasce vazio). A ÚNICA coisa que a réplica acrescenta
+# é esta instrução de FORMATAÇÃO — o DF escreve em Markdown (para a web), e o WhatsApp
+# precisa de texto simples. Em vez de converter por regex depois, a própria IA já
+# entrega o texto pronto pro WhatsApp. É só formatação; nenhuma regra sobre os dados.
+WHATSAPP_FORMAT = (
+    "TOM E FORMATAÇÃO (canal WhatsApp): responda como numa conversa natural de "
+    "WhatsApp, em português do Brasil, com tom direto e amigável — não pareça um "
+    "relatório nem um documento oficial. "
+    "COMECE com UMA frase curta retomando, com suas palavras, o que a pessoa "
+    "perguntou, e só então entregue a resposta (ex.: 'Sobre as obras concluídas que "
+    "você pediu, encontrei o seguinte:'). "
+    "FORMATAÇÃO: texto simples, pronto pro WhatsApp. NÃO use tabelas Markdown, barras "
+    "verticais (|), blocos de código (```) nem títulos com #. Use negrito do WhatsApp "
+    "com UM asterisco de cada lado (*assim*), nunca dois. Em listas, um item por linha "
+    "começando com travessão (—), com uma linha em branco entre os itens. Fecha com "
+    "uma frase curta e natural, sem oferecer menus de opções."
+)
 
 
 class ServiceOverloadedError(RuntimeError):
@@ -427,9 +440,13 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
         # (mais rapido, mas pode errar perguntas complexas). Apagar a variavel
         # (ou por 'false') volta ao raciocinio normal. Nao afeta modelos que
         # ignoram essa instrucao.
-        # Igual ao Data Formulator original: só as "Orientações adicionais" digitadas
-        # no painel (vazio por padrão). Sem bloco de regras fixo de planilha.
-        _regras = config.get('rules', '')
+        # Igual ao DF + a instrução de FORMATAÇÃO pra WhatsApp (a IA já escreve
+        # formatado, em vez de depender da conversão por regex). Mais as "Orientações
+        # adicionais" do painel, se o usuário tiver digitado alguma.
+        _regras = WHATSAPP_FORMAT
+        _painel = (config.get('rules') or '').strip()
+        if _painel:
+            _regras = _regras + '\n\n' + _painel
         if (os.environ.get('WHATSAPP_THINKING_OFF') or '').strip().lower() == 'true':
             _regras = 'detailed thinking off\n' + _regras
         # Idêntico ao web: get_language_instruction(mode="full") lê o Accept-Language
