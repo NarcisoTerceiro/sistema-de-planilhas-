@@ -403,6 +403,9 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
     Levanta ServiceOverloadedError, TimeoutError ou EmptyLLMResponseError quando
     o problema é do provedor, permitindo ao chamador tentar o modelo de reserva."""
     from data_formulator.analyst.agent import AnalystAgent
+    # Mesma instrução de idioma que o Data Formulator web usa (routes/agents.py):
+    # lê o Accept-Language do contexto (pt-BR abaixo) e monta o bloco completo.
+    from data_formulator.routes.agents import get_language_instruction
     # Código gerado deve ter um destino temporário existente no próprio workspace.
     (chat_dir / 'tmp').mkdir(exist_ok=True)
     inputs = [{'name': name} for name in workspace.list_tables()]
@@ -504,9 +507,12 @@ def run_agent_attempt(app, workspace, chat_dir, identity, key, question, history
         )
         if (os.environ.get('WHATSAPP_THINKING_OFF') or '').strip().lower() == 'true':
             _regras = 'detailed thinking off\n' + _regras
+        # Idêntico ao web: get_language_instruction(mode="full") lê o Accept-Language
+        # (pt-BR) deste contexto e devolve o mesmo bloco [LANGUAGE INSTRUCTION] que o
+        # Data Formulator original passa ao agente.
         agent = WhatsAppAnalystAgent(client=client, workspace=workspace,
                              agent_exploration_rules=_regras,
-                             language_instruction='Responda em português do Brasil.',
+                             language_instruction=get_language_instruction(mode='full'),
                              max_iterations=6, max_repair_attempts=2, identity_id=identity)
         for event in agent.run(input_tables=inputs, user_question=question,
                                focused_thread=history, conversation_id=key):
